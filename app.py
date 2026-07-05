@@ -16,7 +16,7 @@ initial_capital = st.sidebar.number_input("Capital inicial (€)", value=10000, 
 tickers = {
     "MSCI World (IWDA)": "IWDAa.xd",   # iShares Core MSCI World
     "Momentum (IWMO)": "IWMOM.xd",     # MSCI World Momentum
-    "Quality (IWQU)": "IWQU.xd"       # MSCI World Quality
+    "Quality (IWQU)": "IWQU.sw"       # MSCI World Quality
 }
 
 @st.cache_data(ttl=3600)
