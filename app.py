@@ -2,14 +2,33 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import date, datetime
 
 st.set_page_config(page_title="Comparador Carteras", layout="wide")
 st.title("📈 Comparador de Carteras Momentum + Quality")
 
 st.sidebar.header("Configuración")
-start_date = st.sidebar.date_input("Fecha de inicio", datetime(2023, 1, 1))
-end_date = st.sidebar.date_input("Fecha de fin", datetime.today())
+
+# --- Accesos rápidos por año ---
+st.sidebar.subheader("Acceso rápido por año")
+current_year = datetime.today().year
+available_years = list(range(2020, current_year + 1))
+
+if "start_date" not in st.session_state:
+    st.session_state.start_date = date(2023, 1, 1)
+if "end_date" not in st.session_state:
+    st.session_state.end_date = datetime.today().date()
+
+cols = st.sidebar.columns(3)
+for i, year in enumerate(available_years):
+    col = cols[i % 3]
+    if col.button(str(year)):
+        st.session_state.start_date = date(year, 1, 1)
+        st.session_state.end_date = date(year, 12, 31) if year != current_year else datetime.today().date()
+
+start_date = st.sidebar.date_input("Fecha de inicio", st.session_state.start_date, key="start_date")
+end_date = st.sidebar.date_input("Fecha de fin", st.session_state.end_date, key="end_date")
+
 initial_capital = st.sidebar.number_input("Capital inicial (€)", value=10000, min_value=1000)
 monthly_contribution = st.sidebar.number_input(
     "Aportación mensual (€)", value=0, min_value=0, step=50,
@@ -50,11 +69,9 @@ data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
 
-# Cartera 50/50 (se calcula sobre precios, antes de simular aportaciones)
 if "Momentum" in data.columns and "Quality" in data.columns:
     data["50/50 Momentum + Quality"] = 0.5 * data["Momentum"] + 0.5 * data["Quality"]
 
-# --- Selector de series a mostrar en el gráfico ---
 st.sidebar.header("Series a mostrar")
 available_series = list(data.columns)
 selected_series = [s for s in available_series if st.sidebar.checkbox(s, value=True)]
@@ -63,15 +80,14 @@ if not selected_series:
     st.warning("Selecciona al menos una serie para visualizar.")
     st.stop()
 
-# --- Simulación con aportaciones mensuales al principio de cada mes ---
 def simulate_portfolio(prices, initial_capital, monthly_contribution):
     prices = prices.dropna()
     units = initial_capital / prices.iloc[0]
     values = []
     contributed = initial_capital
     prev_period = (prices.index[0].year, prices.index[0].month)
-    for i, date in enumerate(prices.index):
-        current_period = (date.year, date.month)
+    for i, dt in enumerate(prices.index):
+        current_period = (dt.year, dt.month)
         if i > 0 and current_period != prev_period and monthly_contribution > 0:
             units += monthly_contribution / prices.iloc[i]
             contributed += monthly_contribution
@@ -88,7 +104,7 @@ for col in selected_series:
 
 portfolio_values = pd.DataFrame(results)
 
-st.subheader("Evolución de las Carteras")
+st.subheader(f"Evolución de las Carteras ({start_date} a {end_date})")
 fig = go.Figure()
 for col in portfolio_values.columns:
     fig.add_trace(go.Scatter(x=portfolio_values.index, y=portfolio_values[col], name=col))
