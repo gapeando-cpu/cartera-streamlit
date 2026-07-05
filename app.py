@@ -14,7 +14,7 @@ initial_capital = st.sidebar.number_input("Capital inicial (€)", value=10000, 
 
 # Tickers recomendados por ti (Europeos)
 tickers = {
-    "MSCI World (IWDA)": "IWDA.xd",   # iShares Core MSCI World
+    "MSCI World (IWDA)": "IWDAa.xd",   # iShares Core MSCI World
     "Momentum (IWMO)": "IWMOM.xd",     # MSCI World Momentum
     "Quality (IWQU)": "IWQU.xd"       # MSCI World Quality
 }
