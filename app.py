@@ -126,4 +126,4 @@ summary["Rentabilidad Total (%)"] = (
 st.dataframe(summary)
 
 st.success("¡App funcionando con tus tickers!")
-st.caption("Replicando la app del vídeo de Josean Paunero")
+st.caption("Comparador de indices")
