@@ -34,6 +34,10 @@ monthly_contribution = st.sidebar.number_input(
     "Aportación mensual (€)", value=0, min_value=0, step=50,
     help="Se añade el primer día de cotización de cada mes"
 )
+rebalance_band = st.sidebar.slider(
+    "Banda de rebalanceo (%)", min_value=1, max_value=20, value=5,
+    help="Si el peso de un activo se desvía más de esta banda respecto al objetivo, se rebalancea toda la cartera"
+) / 100
 
 tickers = {
     "MSCI World": "IWDA.AS",
@@ -80,19 +84,62 @@ if "Momentum" in data.columns and "Quality" in data.columns:
     data["50/50 Momentum + Quality"] = 0.5 * data["Momentum"] + 0.5 * data["Quality"]
 
 if all(x in data.columns for x in ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]):
-    data["Cartera Permanente"] = (
+    data["Cartera Permanente (sin rebalanceo)"] = (
         0.25 * data["MSCI World"] +
         0.25 * data["Renta Fija LP"] +
         0.25 * data["Monetario"] +
         0.25 * data["Oro"]
     )
 
-st.sidebar.header("Series a mostrar")
-available_series = list(data.columns)
-selected_series = [s for s in available_series if st.sidebar.checkbox(s, value=True)]
+available_assets = list(data.columns)
 
-if not selected_series:
-    st.warning("Selecciona al menos una serie para visualizar.")
+# --- Editor de estrategias personalizadas ---
+st.sidebar.header("🎯 Estrategias personalizadas")
+
+if "custom_strategies" not in st.session_state:
+    st.session_state.custom_strategies = {}
+
+with st.sidebar.expander("➕ Crear nueva estrategia"):
+    strategy_name = st.text_input("Nombre de la estrategia", key="new_strategy_name")
+    st.write("Asigna el % de cada activo (deben sumar 100%):")
+    strategy_weights = {}
+    for asset in available_assets:
+        w = st.number_input(f"{asset} (%)", min_value=0, max_value=100, value=0, step=5, key=f"w_{asset}")
+        if w > 0:
+            strategy_weights[asset] = w
+    total_pct = sum(strategy_weights.values())
+    st.caption(f"Total asignado: {total_pct}%")
+    if st.button("Guardar estrategia"):
+        if not strategy_name:
+            st.warning("Ponle un nombre a la estrategia.")
+        elif total_pct != 100:
+            st.warning("Los porcentajes deben sumar exactamente 100%.")
+        else:
+            st.session_state.custom_strategies[strategy_name] = strategy_weights
+            st.success(f"Estrategia '{strategy_name}' guardada.")
+
+if st.session_state.custom_strategies:
+    st.sidebar.subheader("Estrategias guardadas")
+    for name in list(st.session_state.custom_strategies.keys()):
+        col1, col2 = st.sidebar.columns([3, 1])
+        col1.write(f"**{name}**: {st.session_state.custom_strategies[name]}")
+        if col2.button("🗑️", key=f"del_{name}"):
+            del st.session_state.custom_strategies[name]
+            st.rerun()
+
+# --- Selector de series base a mostrar en el gráfico ---
+st.sidebar.header("Series base a mostrar")
+selected_series = [s for s in available_assets if st.sidebar.checkbox(s, value=False, key=f"chk_{s}")]
+
+selected_strategies = []
+if st.session_state.custom_strategies:
+    st.sidebar.header("Estrategias a mostrar")
+    for name in st.session_state.custom_strategies:
+        if st.sidebar.checkbox(name, value=True, key=f"chk_strat_{name}"):
+            selected_strategies.append(name)
+
+if not selected_series and not selected_strategies:
+    st.warning("Selecciona al menos una serie o estrategia para visualizar.")
     st.stop()
 
 def simulate_portfolio(prices, initial_capital, monthly_contribution):
@@ -110,6 +157,43 @@ def simulate_portfolio(prices, initial_capital, monthly_contribution):
         values.append(units * prices.iloc[i])
     return pd.Series(values, index=prices.index), contributed
 
+def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_contribution, band):
+    prices_df = prices_df.dropna()
+    assets = list(weights_pct.keys())
+    weights = {a: w / 100 for a, w in weights_pct.items()}
+
+    shares = {a: (initial_capital * weights[a]) / prices_df[a].iloc[0] for a in assets}
+    values = []
+    contributed = initial_capital
+    prev_period = (prices_df.index[0].year, prices_df.index[0].month)
+    rebalance_dates = []
+
+    for i, dt in enumerate(prices_df.index):
+        current_prices = prices_df.loc[dt]
+        current_period = (dt.year, dt.month)
+
+        if i > 0 and current_period != prev_period and monthly_contribution > 0:
+            for a in assets:
+                shares[a] += (monthly_contribution * weights[a]) / current_prices[a]
+            contributed += monthly_contribution
+            prev_period = current_period
+
+        asset_values = {a: shares[a] * current_prices[a] for a in assets}
+        total_value = sum(asset_values.values())
+
+        needs_rebalance = any(
+            abs(asset_values[a] / total_value - weights[a]) > band for a in assets
+        )
+
+        if needs_rebalance:
+            for a in assets:
+                shares[a] = (total_value * weights[a]) / current_prices[a]
+            rebalance_dates.append(dt)
+
+        values.append(total_value)
+
+    return pd.Series(values, index=prices_df.index), contributed, rebalance_dates
+
 def cagr(series):
     years = (series.index[-1] - series.index[0]).days / 365.25
     if years <= 0:
@@ -123,16 +207,28 @@ def max_drawdown(series):
 
 results = {}
 total_contributed = {}
-cagr_values = {}
-mdd_values = {}
+rebalance_info = {}
+
 for col in selected_series:
     serie, contributed = simulate_portfolio(data[col], initial_capital, monthly_contribution)
     results[col] = serie
     total_contributed[col] = contributed
-    cagr_values[col] = cagr(serie)
-    mdd_values[col] = max_drawdown(serie)
 
-portfolio_values = pd.DataFrame(results)
+for name in selected_strategies:
+    weights_pct = st.session_state.custom_strategies[name]
+    assets_needed = list(weights_pct.keys())
+    if not all(a in data.columns for a in assets_needed):
+        st.warning(f"La estrategia '{name}' usa activos sin datos disponibles en este rango.")
+        continue
+    prices_subset = data[assets_needed]
+    serie, contributed, reb_dates = simulate_custom_strategy(
+        prices_subset, weights_pct, initial_capital, monthly_contribution, rebalance_band
+    )
+    results[name] = serie
+    total_contributed[name] = contributed
+    rebalance_info[name] = len(reb_dates)
+
+portfolio_values = pd.DataFrame(results).dropna()
 
 st.subheader(f"Evolución de las Carteras ({start_date} a {end_date})")
 fig = go.Figure()
@@ -144,17 +240,20 @@ fig.update_layout(height=650, template="plotly_white",
 st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("📊 Resultados finales")
-summary = pd.DataFrame({
-    "Valor final (€)": portfolio_values.iloc[-1].round(2),
-    "Total aportado (€)": pd.Series(total_contributed).round(2),
-})
-summary["Ganancia (€)"] = (summary["Valor final (€)"] - summary["Total aportado (€)"]).round(2)
-summary["Rentabilidad Total (%)"] = (
-    (summary["Valor final (€)"] / summary["Total aportado (€)"] - 1) * 100
-).round(2)
-summary["Rentabilidad Anualizada (%)"] = pd.Series(cagr_values).round(2)
-summary["Máximo Drawdown (%)"] = pd.Series(mdd_values).round(2)
+summary_data = {}
+for col in portfolio_values.columns:
+    serie = portfolio_values[col]
+    summary_data[col] = {
+        "Valor final (€)": round(serie.iloc[-1], 2),
+        "Total aportado (€)": round(total_contributed[col], 2),
+        "Ganancia (€)": round(serie.iloc[-1] - total_contributed[col], 2),
+        "Rentabilidad Total (%)": round((serie.iloc[-1] / total_contributed[col] - 1) * 100, 2),
+        "Rentabilidad Anualizada (%)": round(cagr(serie), 2),
+        "Máximo Drawdown (%)": round(max_drawdown(serie), 2),
+        "Nº Rebalanceos": rebalance_info.get(col, "—")
+    }
 
+summary = pd.DataFrame(summary_data).T
 st.dataframe(summary)
 
 st.success("¡App funcionando con tus tickers!")
