@@ -41,7 +41,11 @@ tickers = {
     "Quality": "IWQU.L",
     "Renta Fija LP": "IBGL.AS",
     "Monetario": "XEON.DE",
-    "Oro": "SGLN.L"
+    "Oro": "SGLN.L",
+    "Cobas Internacional": "0P00019W2R.F",
+    "Numantia Patrimonio": "0P000168OI.F",
+    "iShares Developed World (IE)": "0P0000V8HR.L",
+    "AXA Tresor Court Terme": "0P00000F24.F"
 }
 
 @st.cache_data(ttl=3600)
