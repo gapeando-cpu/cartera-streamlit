@@ -76,11 +76,9 @@ data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
 
-# Cartera 50/50 Momentum + Quality
 if "Momentum" in data.columns and "Quality" in data.columns:
     data["50/50 Momentum + Quality"] = 0.5 * data["Momentum"] + 0.5 * data["Quality"]
 
-# Cartera Permanente (25% MSCI World, 25% Renta Fija LP, 25% Monetario, 25% Oro)
 if all(x in data.columns for x in ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]):
     data["Cartera Permanente"] = (
         0.25 * data["MSCI World"] +
@@ -89,7 +87,6 @@ if all(x in data.columns for x in ["MSCI World", "Renta Fija LP", "Monetario", "
         0.25 * data["Oro"]
     )
 
-# --- Selector de series a mostrar en el gráfico ---
 st.sidebar.header("Series a mostrar")
 available_series = list(data.columns)
 selected_series = [s for s in available_series if st.sidebar.checkbox(s, value=True)]
@@ -98,7 +95,6 @@ if not selected_series:
     st.warning("Selecciona al menos una serie para visualizar.")
     st.stop()
 
-# --- Simulación con aportaciones mensuales al principio de cada mes ---
 def simulate_portfolio(prices, initial_capital, monthly_contribution):
     prices = prices.dropna()
     units = initial_capital / prices.iloc[0]
@@ -114,12 +110,27 @@ def simulate_portfolio(prices, initial_capital, monthly_contribution):
         values.append(units * prices.iloc[i])
     return pd.Series(values, index=prices.index), contributed
 
+def cagr(series):
+    years = (series.index[-1] - series.index[0]).days / 365.25
+    if years <= 0:
+        return float("nan")
+    return ((series.iloc[-1] / series.iloc[0]) ** (1 / years) - 1) * 100
+
+def max_drawdown(series):
+    cummax = series.cummax()
+    dd = series / cummax - 1
+    return dd.min() * 100
+
 results = {}
 total_contributed = {}
+cagr_values = {}
+mdd_values = {}
 for col in selected_series:
     serie, contributed = simulate_portfolio(data[col], initial_capital, monthly_contribution)
     results[col] = serie
     total_contributed[col] = contributed
+    cagr_values[col] = cagr(serie)
+    mdd_values[col] = max_drawdown(serie)
 
 portfolio_values = pd.DataFrame(results)
 
@@ -141,6 +152,8 @@ summary["Ganancia (€)"] = (summary["Valor final (€)"] - summary["Total aport
 summary["Rentabilidad Total (%)"] = (
     (summary["Valor final (€)"] / summary["Total aportado (€)"] - 1) * 100
 ).round(2)
+summary["Rentabilidad Anualizada (%)"] = pd.Series(cagr_values).round(2)
+summary["Máximo Drawdown (%)"] = pd.Series(mdd_values).round(2)
 
 st.dataframe(summary)
 
