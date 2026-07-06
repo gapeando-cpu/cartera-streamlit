@@ -38,7 +38,10 @@ monthly_contribution = st.sidebar.number_input(
 tickers = {
     "MSCI World": "IWDA.AS",
     "Momentum": "IWMO.L",
-    "Quality": "IWQU.L"
+    "Quality": "IWQU.L",
+    "Renta Fija LP": "IBGL.AS",
+    "Monetario": "XEON.DE",
+    "Oro": "SGLN.L"
 }
 
 @st.cache_data(ttl=3600)
@@ -69,9 +72,20 @@ data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
 
+# Cartera 50/50 Momentum + Quality
 if "Momentum" in data.columns and "Quality" in data.columns:
     data["50/50 Momentum + Quality"] = 0.5 * data["Momentum"] + 0.5 * data["Quality"]
 
+# Cartera Permanente (25% MSCI World, 25% Renta Fija LP, 25% Monetario, 25% Oro)
+if all(x in data.columns for x in ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]):
+    data["Cartera Permanente"] = (
+        0.25 * data["MSCI World"] +
+        0.25 * data["Renta Fija LP"] +
+        0.25 * data["Monetario"] +
+        0.25 * data["Oro"]
+    )
+
+# --- Selector de series a mostrar en el gráfico ---
 st.sidebar.header("Series a mostrar")
 available_series = list(data.columns)
 selected_series = [s for s in available_series if st.sidebar.checkbox(s, value=True)]
@@ -80,6 +94,7 @@ if not selected_series:
     st.warning("Selecciona al menos una serie para visualizar.")
     st.stop()
 
+# --- Simulación con aportaciones mensuales al principio de cada mes ---
 def simulate_portfolio(prices, initial_capital, monthly_contribution):
     prices = prices.dropna()
     units = initial_capital / prices.iloc[0]
@@ -126,4 +141,3 @@ summary["Rentabilidad Total (%)"] = (
 st.dataframe(summary)
 
 st.success("¡App funcionando con tus tickers!")
-st.caption("Comparador de indices")
