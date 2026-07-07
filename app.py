@@ -49,6 +49,7 @@ tickers = {
     "Emergentes": "EEM",
     "Small Caps": "IJR",
 }
+
 @st.cache_data(ttl=3600)
 def download_data(tickers_dict, start, end):
     data = {}
@@ -77,15 +78,20 @@ data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
 
+# Cartera 50/50 Momentum + Quality (normalizada correctamente)
 if "Momentum" in data.columns and "Quality" in data.columns:
-    data["50/50 Momentum + Quality"] = 0.5 * data["Momentum"] + 0.5 * data["Quality"]
+    norm_mq = data[["Momentum", "Quality"]] / data[["Momentum", "Quality"]].iloc[0]
+    data["50/50 Momentum + Quality"] = 0.5 * norm_mq["Momentum"] + 0.5 * norm_mq["Quality"]
 
-if all(x in data.columns for x in ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]):
+# Cartera Permanente (normalizada correctamente antes de ponderar)
+base_assets = ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]
+if all(x in data.columns for x in base_assets):
+    normalized_assets = data[base_assets] / data[base_assets].iloc[0]
     data["Cartera Permanente (sin rebalanceo)"] = (
-        0.25 * data["MSCI World"] +
-        0.25 * data["Renta Fija LP"] +
-        0.25 * data["Monetario"] +
-        0.25 * data["Oro"]
+        0.25 * normalized_assets["MSCI World"] +
+        0.25 * normalized_assets["Renta Fija LP"] +
+        0.25 * normalized_assets["Monetario"] +
+        0.25 * normalized_assets["Oro"]
     )
 
 available_assets = list(data.columns)
@@ -192,9 +198,10 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
     return pd.Series(values, index=prices_df.index), contributed, rebalance_dates
 
 def cagr(series):
-    years = (series.index[-1] - series.index[0]).days / 365.25
-    if years <= 0:
+    days = (series.index[-1] - series.index[0]).days
+    if days < 90:
         return float("nan")
+    years = days / 365.25
     return ((series.iloc[-1] / series.iloc[0]) ** (1 / years) - 1) * 100
 
 def max_drawdown(series):
@@ -233,19 +240,20 @@ for col in portfolio_values.columns:
     fig.add_trace(go.Scatter(x=portfolio_values.index, y=portfolio_values[col], name=col))
 
 fig.update_layout(height=650, template="plotly_white",
-                  xaxis_title="Fecha", yaxis_title="Valor de la cartera (€)")
+                  xaxis_title="Fecha", yaxis_title="Valor de la cartera")
 st.plotly_chart(fig, use_container_width=True)
 
 st.subheader("📊 Resultados finales")
 summary_data = {}
 for col in portfolio_values.columns:
     serie = portfolio_values[col]
+    cagr_val = cagr(serie)
     summary_data[col] = {
-        "Valor final (€)": round(serie.iloc[-1], 2),
-        "Total aportado (€)": round(total_contributed[col], 2),
-        "Ganancia (€)": round(serie.iloc[-1] - total_contributed[col], 2),
+        "Valor final": round(serie.iloc[-1], 2),
+        "Total aportado": round(total_contributed[col], 2),
+        "Ganancia": round(serie.iloc[-1] - total_contributed[col], 2),
         "Rentabilidad Total (%)": round((serie.iloc[-1] / total_contributed[col] - 1) * 100, 2),
-        "Rentabilidad Anualizada (%)": round(cagr(serie), 2),
+        "Rentabilidad Anualizada (%)": round(cagr_val, 2) if not pd.isna(cagr_val) else "Periodo muy corto",
         "Máximo Drawdown (%)": round(max_drawdown(serie), 2),
         "Nº Rebalanceos": rebalance_info.get(col, "—")
     }
