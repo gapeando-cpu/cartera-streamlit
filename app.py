@@ -56,6 +56,10 @@ def download_data(tickers_dict, start, end):
     for name, ticker in tickers_dict.items():
         try:
             df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+            if not df.empty:
+                # Elimina días sin negociación real (precios de lanzamiento erróneos)
+                if 'Volume' in df.columns:
+                    df = df[df['Volume'] > 0]
             if not df.empty and len(df) > 10:
                 close = df['Close']
                 if isinstance(close, pd.DataFrame):
@@ -77,9 +81,7 @@ if len(data_dict) < 2:
 data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
-df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-if not df.empty:
-    df = df[df['Volume'] > 0]  # elimina días sin negociación real (precios de lanzamiento erróneos)
+
 # Cartera 50/50 Momentum + Quality (normalizada correctamente)
 if "Momentum" in data.columns and "Quality" in data.columns:
     norm_mq = data[["Momentum", "Quality"]] / data[["Momentum", "Quality"]].iloc[0]
