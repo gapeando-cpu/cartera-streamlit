@@ -35,8 +35,8 @@ monthly_contribution = st.sidebar.number_input(
     help="Se añade el primer día de cotización de cada mes"
 )
 rebalance_band = st.sidebar.slider(
-    "Banda de rebalanceo (%)", min_value=1, max_value=20, value=5,
-    help="Si el peso de un activo se desvía más de esta banda respecto al objetivo, se rebalancea toda la cartera"
+    "Banda de rebalanceo relativa (%)", min_value=1, max_value=50, value=5,
+    help="Ej: con un objetivo del 90% y banda del 5%, se rebalancea si el peso sale del rango 85,5%-94,5% (90% ± 5% de 90%)"
 ) / 100
 
 tickers = {
@@ -56,10 +56,8 @@ def download_data(tickers_dict, start, end):
     for name, ticker in tickers_dict.items():
         try:
             df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-            if not df.empty:
-                # Elimina días sin negociación real (precios de lanzamiento erróneos)
-                if 'Volume' in df.columns:
-                    df = df[df['Volume'] > 0]
+            if not df.empty and 'Volume' in df.columns:
+                df = df[df['Volume'] > 0]
             if not df.empty and len(df) > 10:
                 close = df['Close']
                 if isinstance(close, pd.DataFrame):
@@ -82,12 +80,12 @@ data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
 
-# Cartera 50/50 Momentum + Quality (normalizada correctamente)
+# Cartera 50/50 Momentum + Quality (referencia sin rebalanceo)
 if "Momentum" in data.columns and "Quality" in data.columns:
     norm_mq = data[["Momentum", "Quality"]] / data[["Momentum", "Quality"]].iloc[0]
-    data["50/50 Momentum + Quality"] = 0.5 * norm_mq["Momentum"] + 0.5 * norm_mq["Quality"]
+    data["50/50 Momentum + Quality (sin rebalanceo)"] = 0.5 * norm_mq["Momentum"] + 0.5 * norm_mq["Quality"]
 
-# Cartera Permanente (normalizada correctamente antes de ponderar)
+# Cartera Permanente (referencia sin rebalanceo)
 base_assets = ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]
 if all(x in data.columns for x in base_assets):
     normalized_assets = data[base_assets] / data[base_assets].iloc[0]
@@ -165,6 +163,11 @@ def simulate_portfolio(prices, initial_capital, monthly_contribution):
     return pd.Series(values, index=prices.index), contributed
 
 def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_contribution, band):
+    """
+    Rebalanceo con BANDA RELATIVA: se dispara si el peso actual se desvía
+    más de 'band' (ej. 0.05 = 5%) respecto a SU PROPIO peso objetivo.
+    Ej: objetivo 90% + banda 5% -> rango permitido = 90% * [0.95, 1.05] = [85.5%, 94.5%]
+    """
     prices_df = prices_df.dropna()
     assets = list(weights_pct.keys())
     weights = {a: w / 100 for a, w in weights_pct.items()}
@@ -189,7 +192,8 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
         total_value = sum(asset_values.values())
 
         needs_rebalance = any(
-            abs(asset_values[a] / total_value - weights[a]) > band for a in assets
+            abs(asset_values[a] / total_value - weights[a]) / weights[a] > band
+            for a in assets
         )
 
         if needs_rebalance:
