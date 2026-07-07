@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import date, datetime
 import json
 import os
@@ -101,20 +100,6 @@ if len(data_dict) < 2:
 data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
-
-if "Momentum" in data.columns and "Quality" in data.columns:
-    norm_mq = data[["Momentum", "Quality"]] / data[["Momentum", "Quality"]].iloc[0]
-    data["50/50 Momentum + Quality (sin rebalanceo)"] = 0.5 * norm_mq["Momentum"] + 0.5 * norm_mq["Quality"]
-
-base_assets = ["MSCI World", "Renta Fija LP", "Monetario", "Oro"]
-if all(x in data.columns for x in base_assets):
-    normalized_assets = data[base_assets] / data[base_assets].iloc[0]
-    data["Cartera Permanente (sin rebalanceo)"] = (
-        0.25 * normalized_assets["MSCI World"] +
-        0.25 * normalized_assets["Renta Fija LP"] +
-        0.25 * normalized_assets["Monetario"] +
-        0.25 * normalized_assets["Oro"]
-    )
 
 available_assets = list(data.columns)
 
@@ -300,7 +285,6 @@ if weight_histories:
                 name=asset, stackgroup="one", mode="lines"
             ))
         target_weights = st.session_state.custom_strategies[strategy_to_plot]
-        reb_dates_plot = pd.to_datetime([d for d in wdf.index if d in results[strategy_to_plot].index]) 
         fig_weights.update_layout(
             height=450, template="plotly_white",
             xaxis_title="Fecha", yaxis_title="Peso (%)",
