@@ -77,7 +77,9 @@ if len(data_dict) < 2:
 data = pd.concat(data_dict, axis=1)
 data = data.dropna(how='all')
 data = data.ffill().dropna()
-
+df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+if not df.empty:
+    df = df[df['Volume'] > 0]  # elimina días sin negociación real (precios de lanzamiento erróneos)
 # Cartera 50/50 Momentum + Quality (normalizada correctamente)
 if "Momentum" in data.columns and "Quality" in data.columns:
     norm_mq = data[["Momentum", "Quality"]] / data[["Momentum", "Quality"]].iloc[0]
