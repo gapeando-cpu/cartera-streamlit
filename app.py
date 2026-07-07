@@ -46,6 +46,8 @@ tickers = {
     "Renta Fija LP": "IDTL.L",
     "Monetario": "IB01.L",
     "Oro": "IGLN.L",
+    "Emergentes": "EEM",
+    "Small Caps": "IJR",
 }
 @st.cache_data(ttl=3600)
 def download_data(tickers_dict, start, end):
