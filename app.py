@@ -7,7 +7,7 @@ import json
 import os
 
 st.set_page_config(page_title="Comparador Carteras", layout="wide")
-st.title("📈 Comparador de Carteras Momentum + Quality")
+st.title("ðŸ“ˆ Comparador de Carteras Momentum + Quality")
 
 STRATEGIES_FILE = "strategies.json"
 
@@ -36,14 +36,14 @@ tickers = {
     "Small Caps": "IJR",
 }
 
-HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"  # MSCI World histórico real desde 1995
+HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"
 
-st.sidebar.header("Configuración")
+st.sidebar.header("ConfiguraciÃ³n")
 
 app_mode = st.sidebar.radio(
-    "Modo de simulación",
-    ["📈 Acumulación (aportaciones)", "💸 Retiro (fase de jubilación)"],
-    help="Elige si estás ahorrando/aportando o si ya estás retirando dinero con la regla del colchón"
+    "Modo de simulaciÃ³n",
+    ["ðŸ“ˆ AcumulaciÃ³n (aportaciones)", "ðŸ’¸ Retiro (fase de jubilaciÃ³n)"],
+    help="Elige si estÃ¡s ahorrando/aportando o si ya estÃ¡s retirando dinero con la regla del colchÃ³n"
 )
 
 @st.cache_data(ttl=3600)
@@ -59,11 +59,11 @@ def download_data(tickers_dict, start, end):
                 if isinstance(close, pd.DataFrame):
                     close = close.iloc[:, 0]
                 data[name] = close
-                st.sidebar.success(f"✅ {name} cargado")
+                st.sidebar.success(f"âœ… {name} cargado")
             else:
-                st.sidebar.warning(f"⚠️ Datos insuficientes para {name}")
+                st.sidebar.warning(f"âš ï¸ Datos insuficientes para {name}")
         except Exception as e:
-            st.sidebar.warning(f"⚠️ Error descargando {name}: {e}")
+            st.sidebar.warning(f"âš ï¸ Error descargando {name}: {e}")
     return data
 
 @st.cache_data(ttl=3600)
@@ -75,61 +75,61 @@ def download_single_series(ticker, start, end):
     return close.dropna()
 
 # ============================================================
-# MODO RETIRO (FASE DE JUBILACIÓN CON COLCHÓN)
+# MODO RETIRO (FASE DE JUBILACIÃ“N CON COLCHÃ“N)
 # ============================================================
-if app_mode == "💸 Retiro (fase de jubilación)":
-    st.header("💸 Simulación de Retiro con Colchón")
-    st.caption("El Colchón NO depende de ningún ETF real. Tiene un rendimiento anual deseado, pero nunca puede superar la inflación de ese año.")
+if app_mode == "ðŸ’¸ Retiro (fase de jubilaciÃ³n)":
+    st.header("ðŸ’¸ SimulaciÃ³n de Retiro con ColchÃ³n")
+    st.caption("El ColchÃ³n NO depende de ningÃºn ETF real. Tiene un rendimiento anual deseado, pero nunca puede superar la inflaciÃ³n de ese aÃ±o.")
 
     col1, col2 = st.sidebar.columns(2)
-    start_year_ret = col1.number_input("Año inicio", min_value=1997, max_value=2026, value=1997)
-    end_year_ret = col2.number_input("Año fin", min_value=1997, max_value=2026, value=2026)
+    start_year_ret = col1.number_input("AÃ±o inicio", min_value=1997, max_value=2026, value=1997)
+    end_year_ret = col2.number_input("AÃ±o fin", min_value=1997, max_value=2026, value=2026)
 
-    st.sidebar.subheader("📊 Activo o estrategia de crecimiento")
+    st.sidebar.subheader("ðŸ“Š Activo o estrategia de crecimiento")
 
     if "custom_strategies" not in st.session_state:
         st.session_state.custom_strategies = load_strategies_from_disk()
 
-    growth_options = ["MSCI World (histórico ampliado desde 1997)"] + list(tickers.keys())
+    growth_options = ["MSCI World (histÃ³rico ampliado desde 1997)"] + list(tickers.keys())
     if st.session_state.custom_strategies:
-        growth_options += [f"📁 {name}" for name in st.session_state.custom_strategies]
+        growth_options += [f"ðŸ“ {name}" for name in st.session_state.custom_strategies]
 
     growth_choice = st.sidebar.selectbox(
-        "¿Con qué inviertes el Fondo durante el retiro?",
+        "Â¿Con quÃ© inviertes el Fondo durante el retiro?",
         growth_options,
-        help="Puedes elegir un único activo, o una de tus estrategias personalizadas creadas en modo Acumulación"
+        help="Puedes elegir un Ãºnico activo, o una de tus estrategias personalizadas creadas en modo AcumulaciÃ³n"
     )
 
-    st.sidebar.subheader("💰 Capital y gastos")
-    initial_fund_value = st.sidebar.number_input("Capital inicial en el Fondo (€)", value=300000, min_value=1000, step=10000)
-    annual_expenses = st.sidebar.number_input("Gastos anuales (€)", value=15000, min_value=1000, step=500,
-        help="Se retiran del Colchón en años negativos. También define el tamaño del Colchón.")
-    fund_withdrawal_positive = st.sidebar.number_input("Retiro del Fondo en año positivo/plano (€)", value=20000, min_value=0, step=500,
-        help="Cantidad que retiras del Fondo cuando el año ANTERIOR fue positivo o plano")
+    st.sidebar.subheader("ðŸ’° Capital y gastos")
+    initial_fund_value = st.sidebar.number_input("Capital inicial en el Fondo (â‚¬)", value=300000, min_value=1000, step=10000)
+    annual_expenses = st.sidebar.number_input("Gastos anuales (â‚¬)", value=15000, min_value=1000, step=500,
+        help="Se retiran del ColchÃ³n en aÃ±os negativos. TambiÃ©n define el tamaÃ±o del ColchÃ³n.")
+    fund_withdrawal_positive = st.sidebar.number_input("Retiro del Fondo en aÃ±o positivo/plano (â‚¬)", value=20000, min_value=0, step=500,
+        help="Cantidad que retiras del Fondo cuando el aÃ±o ANTERIOR fue positivo o plano")
 
-    st.sidebar.subheader("📊 Inflación y fiscalidad")
-    inflation_rate_ret = st.sidebar.number_input("Inflación anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
-    apply_tax = st.sidebar.checkbox("Aplicar IRPF sobre plusvalías al vender del Fondo", value=True)
+    st.sidebar.subheader("ðŸ“Š InflaciÃ³n y fiscalidad")
+    inflation_rate_ret = st.sidebar.number_input("InflaciÃ³n anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
+    apply_tax = st.sidebar.checkbox("Aplicar IRPF sobre plusvalÃ­as al vender del Fondo", value=True)
     tax_rate = st.sidebar.number_input("Tipo medio IRPF (%)", value=23.0, min_value=0.0, max_value=50.0, step=1.0,
         disabled=not apply_tax) / 100
-    cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalía)",
+    cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalÃ­a)",
         min_value=0, max_value=100, value=50, disabled=not apply_tax) / 100
 
-    st.sidebar.subheader("🛡️ Colchón (sin ETF, capado a inflación)")
-    cushion_multiple = st.sidebar.number_input("Múltiplo de gastos anuales para el Colchón", value=3.0, min_value=1.0, step=0.5,
-        help="Ej: 3x gastos anuales = límite máximo del colchón")
+    st.sidebar.subheader("ðŸ›¡ï¸ ColchÃ³n (sin ETF, capado a inflaciÃ³n)")
+    cushion_multiple = st.sidebar.number_input("MÃºltiplo de gastos anuales para el ColchÃ³n", value=3.0, min_value=1.0, step=0.5,
+        help="Ej: 3x gastos anuales = lÃ­mite mÃ¡ximo del colchÃ³n")
     cushion_desired_return = st.sidebar.number_input(
-        "Rendimiento anual deseado del Colchón (%)", value=2.0, min_value=0.0, max_value=15.0, step=0.5,
-        help="El colchón crecerá a este ritmo cada año, pero NUNCA por encima de la inflación de ese año (se aplica el mínimo entre ambos)."
+        "Rendimiento anual deseado del ColchÃ³n (%)", value=2.0, min_value=0.0, max_value=15.0, step=0.5,
+        help="El colchÃ³n crecerÃ¡ a este ritmo cada aÃ±o, pero NUNCA por encima de la inflaciÃ³n de ese aÃ±o (se aplica el mÃ­nimo entre ambos)."
     ) / 100
     cushion_effective_return = min(cushion_desired_return, inflation_rate_ret)
-    st.sidebar.caption(f"➡️ Rendimiento efectivo del Colchón: **{cushion_effective_return*100:.2f}%** (mínimo entre deseado e inflación)")
+    st.sidebar.caption(f"âž¡ï¸ Rendimiento efectivo del ColchÃ³n: **{cushion_effective_return*100:.2f}%** (mÃ­nimo entre deseado e inflaciÃ³n)")
 
-    if growth_choice == "MSCI World (histórico ampliado desde 1997)":
+    if growth_choice == "MSCI World (histÃ³rico ampliado desde 1997)":
         growth_series = download_single_series(HISTORICAL_INDEX_TICKER, "1996-01-01", "2026-07-05")
-        growth_label = "MSCI World (índice histórico)"
-    elif growth_choice.startswith("📁 "):
-        strategy_name = growth_choice.replace("📁 ", "")
+        growth_label = "MSCI World (Ã­ndice histÃ³rico)"
+    elif growth_choice.startswith("ðŸ“ "):
+        strategy_name = growth_choice.replace("ðŸ“ ", "")
         weights_pct = st.session_state.custom_strategies[strategy_name]
         assets_needed = list(weights_pct.keys())
         data_strategy = download_data({a: tickers[a] for a in assets_needed}, "2015-01-01", "2026-07-05")
@@ -138,12 +138,12 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         weights_frac = {a: w / 100 for a, w in weights_pct.items()}
         growth_series = sum(normalized[a] * weights_frac[a] for a in assets_needed) * initial_fund_value
         growth_series = growth_series / growth_series.iloc[0]
-        growth_label = f"Estrategia '{strategy_name}' (sin rebalanceo, buy&hold para esta simulación)"
+        growth_label = f"Estrategia '{strategy_name}' (sin rebalanceo, buy&hold para esta simulaciÃ³n)"
     else:
         growth_series = download_single_series(tickers[growth_choice], "1996-01-01", "2026-07-05")
         growth_label = growth_choice
 
-    st.info(f"📌 Activo de crecimiento del Fondo: **{growth_label}** · Colchón: **{cushion_effective_return*100:.2f}% anual (capado a inflación)**")
+    st.info(f"ðŸ“Œ Activo de crecimiento del Fondo: **{growth_label}** Â· ColchÃ³n: **{cushion_effective_return*100:.2f}% anual (capado a inflaciÃ³n)**")
 
     def simulate_withdrawal_capped_cushion(
         growth_prices, start_year, end_year,
@@ -163,7 +163,6 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         current_fund_withdrawal_target = fund_withdrawal_positive
         cushion_max = cushion_multiple * current_expenses
         cushion = cushion_max
-        # El colchón nunca puede crecer por encima de la inflación, aunque el rendimiento deseado sea mayor
         cushion_growth_rate = min(cushion_desired_return, inflation_rate)
 
         records = []
@@ -175,11 +174,10 @@ if app_mode == "💸 Retiro (fase de jubilación)":
             fund_value = fund_value * (1 + ret)
             fund_growth = fund_value - fund_before
 
-            # Rendimiento fijo, capado a inflación, sin depender de ningún ETF real
             cushion = cushion * (1 + cushion_growth_rate)
 
             tax_paid, cushion_refill, forced = 0, 0, False
-            source = "Fondo" if prev_year_positive else "Colchón"
+            source = "Fondo" if prev_year_positive else "ColchÃ³n"
             target = current_fund_withdrawal_target if prev_year_positive else current_expenses
 
             if source == "Fondo":
@@ -209,17 +207,17 @@ if app_mode == "💸 Retiro (fase de jubilación)":
                     fund_value = max(0, fund_value - needed)
 
             records.append({
-                "Año": year,
+                "AÃ±o": year,
                 "Rentabilidad Fondo (%)": round(ret * 100, 2),
-                "Rentabilidad Colchón (%)": round(cushion_growth_rate * 100, 2),
-                "Año anterior": "Positivo/Plano" if prev_year_positive else "Negativo",
-                "Fuente retiro": source if not forced else "Fondo (colchón agotado)",
-                "Retiro objetivo (€)": round(target, 2),
-                "Impuestos pagados (€)": round(tax_paid, 2),
-                "Recarga colchón (€)": round(cushion_refill, 2),
-                "Valor Fondo (€)": round(fund_value, 2),
-                "Colchón (€)": round(cushion, 2),
-                "Patrimonio Total (€)": round(fund_value + cushion, 2),
+                "Rentabilidad ColchÃ³n (%)": round(cushion_growth_rate * 100, 2),
+                "AÃ±o anterior": "Positivo/Plano" if prev_year_positive else "Negativo",
+                "Fuente retiro": source if not forced else "Fondo (colchÃ³n agotado)",
+                "Retiro objetivo (â‚¬)": round(target, 2),
+                "Impuestos pagados (â‚¬)": round(tax_paid, 2),
+                "Recarga colchÃ³n (â‚¬)": round(cushion_refill, 2),
+                "Valor Fondo (â‚¬)": round(fund_value, 2),
+                "ColchÃ³n (â‚¬)": round(cushion, 2),
+                "Patrimonio Total (â‚¬)": round(fund_value + cushion, 2),
             })
 
             prev_year_positive = ret >= 0
@@ -238,46 +236,46 @@ if app_mode == "💸 Retiro (fase de jubilación)":
     )
 
     if eff_year > start_year_ret:
-        st.warning(f"⚠️ El activo/estrategia elegido no tiene histórico desde {start_year_ret}. La simulación empieza en {eff_year} (primer año con datos disponibles para ese activo de crecimiento).")
+        st.warning(f"âš ï¸ El activo/estrategia elegido no tiene histÃ³rico desde {start_year_ret}. La simulaciÃ³n empieza en {eff_year} (primer aÃ±o con datos disponibles para ese activo de crecimiento).")
 
-    st.subheader(f"Evolución del Patrimonio ({eff_year}-{end_year_ret})")
+    st.subheader(f"EvoluciÃ³n del Patrimonio ({eff_year}-{end_year_ret})")
     fig_ret = go.Figure()
-    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Valor Fondo (€)"],
+    fig_ret.add_trace(go.Scatter(x=resultado_retiro["AÃ±o"], y=resultado_retiro["Valor Fondo (â‚¬)"],
         name="Fondo", stackgroup="one", mode="lines"))
-    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Colchón (€)"],
-        name=f"Colchón (capado a inflación, {cushion_effective_return*100:.1f}%)", stackgroup="one", mode="lines"))
+    fig_ret.add_trace(go.Scatter(x=resultado_retiro["AÃ±o"], y=resultado_retiro["ColchÃ³n (â‚¬)"],
+        name=f"ColchÃ³n (capado a inflaciÃ³n, {cushion_effective_return*100:.1f}%)", stackgroup="one", mode="lines"))
     fig_ret.update_layout(height=500, template="plotly_white",
-        xaxis_title="Año", yaxis_title="Valor (€)")
+        xaxis_title="AÃ±o", yaxis_title="Valor (â‚¬)")
     st.plotly_chart(fig_ret, use_container_width=True)
 
-    agotado = resultado_retiro[resultado_retiro["Patrimonio Total (€)"] <= 0]
+    agotado = resultado_retiro[resultado_retiro["Patrimonio Total (â‚¬)"] <= 0]
     if not agotado.empty:
-        st.error(f"⚠️ El patrimonio se agota en el año {agotado.iloc[0]['Año']}.")
+        st.error(f"âš ï¸ El patrimonio se agota en el aÃ±o {agotado.iloc[0]['AÃ±o']}.")
     else:
-        st.success(f"✅ El patrimonio sobrevive todo el periodo. Valor final: {resultado_retiro.iloc[-1]['Patrimonio Total (€)']:,.2f} €")
+        st.success(f"âœ… El patrimonio sobrevive todo el periodo. Valor final: {resultado_retiro.iloc[-1]['Patrimonio Total (â‚¬)']:,.2f} â‚¬")
 
-    st.subheader("📋 Detalle año a año")
+    st.subheader("ðŸ“‹ Detalle aÃ±o a aÃ±o")
     st.dataframe(resultado_retiro, use_container_width=True)
 
-    total_taxes = resultado_retiro["Impuestos pagados (€)"].sum()
+    total_taxes = resultado_retiro["Impuestos pagados (â‚¬)"].sum()
     years_from_fund = (resultado_retiro["Fuente retiro"].str.contains("Fondo")).sum()
-    years_from_cushion = (resultado_retiro["Fuente retiro"] == "Colchón").sum()
+    years_from_cushion = (resultado_retiro["Fuente retiro"] == "ColchÃ³n").sum()
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total impuestos pagados", f"{total_taxes:,.0f} €")
-    m2.metric("Años retirando del Fondo", years_from_fund)
-    m3.metric("Años retirando del Colchón", years_from_cushion)
+    m1.metric("Total impuestos pagados", f"{total_taxes:,.0f} â‚¬")
+    m2.metric("AÃ±os retirando del Fondo", years_from_fund)
+    m3.metric("AÃ±os retirando del ColchÃ³n", years_from_cushion)
 
     csv = resultado_retiro.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Descargar simulación (CSV)", csv, "simulacion_retiro.csv", "text/csv")
+    st.download_button("ðŸ“¥ Descargar simulaciÃ³n (CSV)", csv, "simulacion_retiro.csv", "text/csv")
 
     st.stop()
 
 # ============================================================
-# MODO ACUMULACIÓN (sin cambios)
+# MODO ACUMULACIÃ“N
 # ============================================================
 
-st.sidebar.subheader("Acceso rápido por año")
+st.sidebar.subheader("Acceso rÃ¡pido por aÃ±o")
 current_year = datetime.today().year
 available_years = list(range(2020, current_year + 1))
 
@@ -296,18 +294,18 @@ for i, year in enumerate(available_years):
 start_date = st.sidebar.date_input("Fecha de inicio", st.session_state.start_date, key="start_date")
 end_date = st.sidebar.date_input("Fecha de fin", st.session_state.end_date, key="end_date")
 
-initial_capital = st.sidebar.number_input("Capital inicial (€)", value=10000, min_value=1000)
+initial_capital = st.sidebar.number_input("Capital inicial (â‚¬)", value=10000, min_value=1000)
 monthly_contribution = st.sidebar.number_input(
-    "Aportación mensual (€)", value=0, min_value=0, step=50,
-    help="Se añade el primer día de cotización de cada mes"
+    "AportaciÃ³n mensual (â‚¬)", value=0, min_value=0, step=50,
+    help="Se aÃ±ade el primer dÃ­a de cotizaciÃ³n de cada mes"
 )
 rebalance_band = st.sidebar.slider(
     "Banda de rebalanceo relativa (%)", min_value=1, max_value=50, value=5,
-    help="Ej: con un objetivo del 90% y banda del 5%, se rebalancea si el peso sale del rango 85,5%-94,5% (90% ± 5% de 90%)"
+    help="Ej: con un objetivo del 90% y banda del 5%, se rebalancea si el peso sale del rango 85,5%-94,5% (90% Â± 5% de 90%)"
 ) / 100
 transaction_fee = st.sidebar.number_input(
-    "Coste de transacción (%)", value=0.10, min_value=0.0, max_value=5.0, step=0.05,
-    help="Comisión aplicada sobre cada compra, aportación y rebalanceo (ej. 0.10% típico en brokers de bajo coste)"
+    "Coste de transacciÃ³n (%)", value=0.10, min_value=0.0, max_value=5.0, step=0.05,
+    help="ComisiÃ³n aplicada sobre cada compra, aportaciÃ³n y rebalanceo (ej. 0.10% tÃ­pico en brokers de bajo coste)"
 ) / 100
 
 data_dict = download_data(tickers, start_date, end_date)
@@ -321,12 +319,12 @@ data = data.ffill()
 
 available_assets = list(data.columns)
 
-st.sidebar.header("🎯 Estrategias personalizadas")
+st.sidebar.header("ðŸŽ¯ Estrategias personalizadas")
 
 if "custom_strategies" not in st.session_state:
     st.session_state.custom_strategies = load_strategies_from_disk()
 
-with st.sidebar.expander("➕ Crear nueva estrategia"):
+with st.sidebar.expander("âž• Crear nueva estrategia"):
     strategy_name = st.text_input("Nombre de la estrategia", key="new_strategy_name")
     st.write("Asigna el % de cada activo (deben sumar 100%):")
     strategy_weights = {}
@@ -351,7 +349,7 @@ if st.session_state.custom_strategies:
     for name in list(st.session_state.custom_strategies.keys()):
         col1, col2 = st.sidebar.columns([3, 1])
         col1.write(f"**{name}**: {st.session_state.custom_strategies[name]}")
-        if col2.button("🗑️", key=f"del_{name}"):
+        if col2.button("ðŸ—‘ï¸", key=f"del_{name}"):
             del st.session_state.custom_strategies[name]
             save_strategies_to_disk(st.session_state.custom_strategies)
             st.rerun()
@@ -428,4 +426,5 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
             fee_amount = turnover * fee_pct
             total_value_after_fee = total_value - fee_amount
             for a in assets:
-                shares[a] = (total_value
+                shares[a] = (total_value_after_fee * weights[a]) / current_prices[a]
+   
