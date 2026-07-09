@@ -436,4 +436,4 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
             for a in assets:
                 shares[a] = (total_value_after_fee * weights[a]) / current_prices[a]
             rebalance_dates.append(dt)
-    
+   
