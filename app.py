@@ -36,7 +36,7 @@ tickers = {
     "Small Caps": "IJR",
 }
 
-HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"
+HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"  # MSCI World histórico real desde 1995
 
 st.sidebar.header("Configuración")
 
@@ -79,7 +79,7 @@ def download_single_series(ticker, start, end):
 # ============================================================
 if app_mode == "💸 Retiro (fase de jubilación)":
     st.header("💸 Simulación de Retiro con Colchón")
-    st.caption("Elige la misma estrategia/activo de crecimiento que usarías en acumulación. El Colchón siempre rentabiliza como el fondo Monetario.")
+    st.caption("El Colchón NO depende de ningún ETF real. Tiene un rendimiento anual deseado, pero nunca puede superar la inflación de ese año.")
 
     col1, col2 = st.sidebar.columns(2)
     start_year_ret = col1.number_input("Año inicio", min_value=1997, max_value=2026, value=1997)
@@ -107,10 +107,6 @@ if app_mode == "💸 Retiro (fase de jubilación)":
     fund_withdrawal_positive = st.sidebar.number_input("Retiro del Fondo en año positivo/plano (€)", value=20000, min_value=0, step=500,
         help="Cantidad que retiras del Fondo cuando el año ANTERIOR fue positivo o plano")
 
-    st.sidebar.subheader("🛡️ Colchón (Monetario)")
-    cushion_multiple = st.sidebar.number_input("Múltiplo de gastos anuales para el Colchón", value=3.0, min_value=1.0, step=0.5,
-        help="Ej: 3x gastos anuales = límite máximo del colchón. Siempre rentabiliza como el fondo Monetario (IB01.L)")
-
     st.sidebar.subheader("📊 Inflación y fiscalidad")
     inflation_rate_ret = st.sidebar.number_input("Inflación anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
     apply_tax = st.sidebar.checkbox("Aplicar IRPF sobre plusvalías al vender del Fondo", value=True)
@@ -118,6 +114,16 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         disabled=not apply_tax) / 100
     cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalía)",
         min_value=0, max_value=100, value=50, disabled=not apply_tax) / 100
+
+    st.sidebar.subheader("🛡️ Colchón (sin ETF, capado a inflación)")
+    cushion_multiple = st.sidebar.number_input("Múltiplo de gastos anuales para el Colchón", value=3.0, min_value=1.0, step=0.5,
+        help="Ej: 3x gastos anuales = límite máximo del colchón")
+    cushion_desired_return = st.sidebar.number_input(
+        "Rendimiento anual deseado del Colchón (%)", value=2.0, min_value=0.0, max_value=15.0, step=0.5,
+        help="El colchón crecerá a este ritmo cada año, pero NUNCA por encima de la inflación de ese año (se aplica el mínimo entre ambos)."
+    ) / 100
+    cushion_effective_return = min(cushion_desired_return, inflation_rate_ret)
+    st.sidebar.caption(f"➡️ Rendimiento efectivo del Colchón: **{cushion_effective_return*100:.2f}%** (mínimo entre deseado e inflación)")
 
     if growth_choice == "MSCI World (histórico ampliado desde 1997)":
         growth_series = download_single_series(HISTORICAL_INDEX_TICKER, "1996-01-01", "2026-07-05")
@@ -137,51 +143,40 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         growth_series = download_single_series(tickers[growth_choice], "1996-01-01", "2026-07-05")
         growth_label = growth_choice
 
-    cushion_series = download_single_series(tickers["Monetario"], "1996-01-01", "2026-07-05")
+    st.info(f"📌 Activo de crecimiento del Fondo: **{growth_label}** · Colchón: **{cushion_effective_return*100:.2f}% anual (capado a inflación)**")
 
-    st.info(f"📌 Activo de crecimiento del Fondo: **{growth_label}** · Colchón: **Monetario (IB01.L)**")
-
-    def simulate_withdrawal_strategy_generic(
-        growth_prices, cushion_prices,
-        start_year, end_year,
+    def simulate_withdrawal_capped_cushion(
+        growth_prices, start_year, end_year,
         initial_fund_value, annual_expenses, fund_withdrawal_positive,
-        cushion_multiple, inflation_rate, apply_tax, tax_rate, cost_basis_pct
+        cushion_multiple, cushion_desired_return, inflation_rate,
+        apply_tax, tax_rate, cost_basis_pct
     ):
         growth_annual = growth_prices.resample('YE').last()
-        cushion_annual = cushion_prices.resample('YE').last()
-
-        common_index = growth_annual.index.intersection(cushion_annual.index)
-        growth_annual = growth_annual.loc[common_index]
-        cushion_annual = cushion_annual.loc[common_index]
-
-        min_year_available = common_index.year.min()
+        min_year_available = growth_annual.index.year.min()
         effective_start_year = max(start_year, min_year_available)
 
         growth_annual = growth_annual[(growth_annual.index.year >= effective_start_year - 1) & (growth_annual.index.year <= end_year)]
-        cushion_annual = cushion_annual[(cushion_annual.index.year >= effective_start_year - 1) & (cushion_annual.index.year <= end_year)]
-
         growth_returns = growth_annual.pct_change().dropna()
-        cushion_returns = cushion_annual.pct_change().dropna()
 
         fund_value = initial_fund_value
         current_expenses = annual_expenses
         current_fund_withdrawal_target = fund_withdrawal_positive
         cushion_max = cushion_multiple * current_expenses
         cushion = cushion_max
+        # El colchón nunca puede crecer por encima de la inflación, aunque el rendimiento deseado sea mayor
+        cushion_growth_rate = min(cushion_desired_return, inflation_rate)
 
         records = []
         prev_year_positive = True
 
-        for dt in growth_returns.index:
+        for dt, ret in growth_returns.items():
             year = dt.year
-            ret = growth_returns.loc[dt]
-            cushion_ret = cushion_returns.loc[dt] if dt in cushion_returns.index else 0.0
-
             fund_before = fund_value
             fund_value = fund_value * (1 + ret)
             fund_growth = fund_value - fund_before
 
-            cushion = cushion * (1 + cushion_ret)
+            # Rendimiento fijo, capado a inflación, sin depender de ningún ETF real
+            cushion = cushion * (1 + cushion_growth_rate)
 
             tax_paid, cushion_refill, forced = 0, 0, False
             source = "Fondo" if prev_year_positive else "Colchón"
@@ -216,7 +211,7 @@ if app_mode == "💸 Retiro (fase de jubilación)":
             records.append({
                 "Año": year,
                 "Rentabilidad Fondo (%)": round(ret * 100, 2),
-                "Rentabilidad Colchón (%)": round(cushion_ret * 100, 2),
+                "Rentabilidad Colchón (%)": round(cushion_growth_rate * 100, 2),
                 "Año anterior": "Positivo/Plano" if prev_year_positive else "Negativo",
                 "Fuente retiro": source if not forced else "Fondo (colchón agotado)",
                 "Retiro objetivo (€)": round(target, 2),
@@ -234,22 +229,23 @@ if app_mode == "💸 Retiro (fase de jubilación)":
 
         return pd.DataFrame(records), effective_start_year
 
-    resultado_retiro, eff_year = simulate_withdrawal_strategy_generic(
-        growth_series, cushion_series,
+    resultado_retiro, eff_year = simulate_withdrawal_capped_cushion(
+        growth_series,
         int(start_year_ret), int(end_year_ret),
         initial_fund_value, annual_expenses, fund_withdrawal_positive,
-        cushion_multiple, inflation_rate_ret, apply_tax, tax_rate, cost_basis_pct
+        cushion_multiple, cushion_desired_return, inflation_rate_ret,
+        apply_tax, tax_rate, cost_basis_pct
     )
 
     if eff_year > start_year_ret:
-        st.warning(f"⚠️ El activo/estrategia elegido no tiene histórico desde {start_year_ret}. La simulación empieza en {eff_year} (primer año con datos disponibles tanto del activo de crecimiento como del Monetario).")
+        st.warning(f"⚠️ El activo/estrategia elegido no tiene histórico desde {start_year_ret}. La simulación empieza en {eff_year} (primer año con datos disponibles para ese activo de crecimiento).")
 
     st.subheader(f"Evolución del Patrimonio ({eff_year}-{end_year_ret})")
     fig_ret = go.Figure()
     fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Valor Fondo (€)"],
         name="Fondo", stackgroup="one", mode="lines"))
     fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Colchón (€)"],
-        name="Colchón (Monetario)", stackgroup="one", mode="lines"))
+        name=f"Colchón (capado a inflación, {cushion_effective_return*100:.1f}%)", stackgroup="one", mode="lines"))
     fig_ret.update_layout(height=500, template="plotly_white",
         xaxis_title="Año", yaxis_title="Valor (€)")
     st.plotly_chart(fig_ret, use_container_width=True)
@@ -278,7 +274,7 @@ if app_mode == "💸 Retiro (fase de jubilación)":
     st.stop()
 
 # ============================================================
-# MODO ACUMULACIÓN — CORREGIDO
+# MODO ACUMULACIÓN (sin cambios)
 # ============================================================
 
 st.sidebar.subheader("Acceso rápido por año")
@@ -320,8 +316,6 @@ if len(data_dict) < 2:
     st.error("No hay suficientes datos. Prueba con otras fechas.")
     st.stop()
 
-# FIX: ya no se hace dropna() global. Cada serie conserva su propio histórico completo,
-# sin que un activo con menos datos recorte a los demás.
 data = pd.concat(data_dict, axis=1)
 data = data.ffill()
 
@@ -434,6 +428,4 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
             fee_amount = turnover * fee_pct
             total_value_after_fee = total_value - fee_amount
             for a in assets:
-                shares[a] = (total_value_after_fee * weights[a]) / current_prices[a]
-            rebalance_dates.append(dt)
-   
+                shares[a] = (total_value
