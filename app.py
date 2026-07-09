@@ -24,6 +24,20 @@ def save_strategies_to_disk(strategies):
     with open(STRATEGIES_FILE, "w") as f:
         json.dump(strategies, f, indent=2)
 
+tickers = {
+    "MSCI World": "URTH",
+    "MSCI World Value": "IWVL.L",
+    "Momentum": "IWMO.L",
+    "Quality": "IWQU.L",
+    "Renta Fija LP": "IDTL.L",
+    "Monetario": "IB01.L",
+    "Oro": "IGLN.L",
+    "Emergentes": "EEM",
+    "Small Caps": "IJR",
+}
+
+HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"
+
 st.sidebar.header("Configuración")
 
 app_mode = st.sidebar.radio(
@@ -32,16 +46,59 @@ app_mode = st.sidebar.radio(
     help="Elige si estás ahorrando/aportando o si ya estás retirando dinero con la regla del colchón"
 )
 
+@st.cache_data(ttl=3600)
+def download_data(tickers_dict, start, end):
+    data = {}
+    for name, ticker in tickers_dict.items():
+        try:
+            df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+            if not df.empty and 'Volume' in df.columns:
+                df = df[df['Volume'] > 0]
+            if not df.empty and len(df) > 10:
+                close = df['Close']
+                if isinstance(close, pd.DataFrame):
+                    close = close.iloc[:, 0]
+                data[name] = close
+                st.sidebar.success(f"✅ {name} cargado")
+            else:
+                st.sidebar.warning(f"⚠️ Datos insuficientes para {name}")
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ Error descargando {name}: {e}")
+    return data
+
+@st.cache_data(ttl=3600)
+def download_single_series(ticker, start, end):
+    df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+    close = df['Close']
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return close.dropna()
+
 # ============================================================
 # MODO RETIRO (FASE DE JUBILACIÓN CON COLCHÓN)
 # ============================================================
 if app_mode == "💸 Retiro (fase de jubilación)":
     st.header("💸 Simulación de Retiro con Colchón")
-    st.caption("Simula desde 1997 usando el índice MSCI World real, con reglas de retiro según el año anterior y un colchón en monetario.")
+    st.caption("Elige la misma estrategia/activo de crecimiento que usarías en acumulación. El Colchón siempre rentabiliza como el fondo Monetario.")
 
     col1, col2 = st.sidebar.columns(2)
     start_year_ret = col1.number_input("Año inicio", min_value=1997, max_value=2026, value=1997)
     end_year_ret = col2.number_input("Año fin", min_value=1997, max_value=2026, value=2026)
+
+    st.sidebar.subheader("📊 Activo o estrategia de crecimiento")
+
+    if "custom_strategies" not in st.session_state:
+        st.session_state.custom_strategies = load_strategies_from_disk()
+
+    growth_options = ["MSCI World (histórico ampliado desde 1997)"] + list(tickers.keys())
+    if st.session_state.custom_strategies:
+        growth_options += [f"📁 {name}" for name in st.session_state.custom_strategies]
+
+    growth_choice = st.sidebar.selectbox(
+        "¿Con qué inviertes el Fondo durante el retiro?",
+        growth_options,
+        help="Puedes elegir un único activo, o una de tus estrategias personalizadas creadas en modo Acumulación"
+    )
 
     st.sidebar.subheader("💰 Capital y gastos")
     initial_fund_value = st.sidebar.number_input("Capital inicial en el Fondo (€)", value=300000, min_value=1000, step=10000)
@@ -52,7 +109,7 @@ if app_mode == "💸 Retiro (fase de jubilación)":
 
     st.sidebar.subheader("🛡️ Colchón (Monetario)")
     cushion_multiple = st.sidebar.number_input("Múltiplo de gastos anuales para el Colchón", value=3.0, min_value=1.0, step=0.5,
-        help="Ej: 3x gastos anuales = límite máximo del colchón")
+        help="Ej: 3x gastos anuales = límite máximo del colchón. Siempre rentabiliza como el fondo Monetario (IB01.L)")
 
     st.sidebar.subheader("📊 Inflación y fiscalidad")
     inflation_rate_ret = st.sidebar.number_input("Inflación anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
@@ -62,22 +119,49 @@ if app_mode == "💸 Retiro (fase de jubilación)":
     cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalía)",
         min_value=0, max_value=100, value=50, disabled=not apply_tax) / 100
 
-    @st.cache_data(ttl=3600)
-    def descargar_msci_world_historico(start="1996-01-01", end="2026-07-05"):
-        df = yf.download("^990100-USD-STRD", start=start, end=end, progress=False, auto_adjust=True)
-        close = df['Close']
-        if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
-        return close.dropna()
+    if growth_choice == "MSCI World (histórico ampliado desde 1997)":
+        growth_series = download_single_series(HISTORICAL_INDEX_TICKER, "1996-01-01", "2026-07-05")
+        growth_label = "MSCI World (índice histórico)"
+    elif growth_choice.startswith("📁 "):
+        strategy_name = growth_choice.replace("📁 ", "")
+        weights_pct = st.session_state.custom_strategies[strategy_name]
+        assets_needed = list(weights_pct.keys())
+        data_strategy = download_data({a: tickers[a] for a in assets_needed}, "2015-01-01", "2026-07-05")
+        combined = pd.concat(data_strategy, axis=1).ffill().dropna()
+        normalized = combined / combined.iloc[0]
+        weights_frac = {a: w / 100 for a, w in weights_pct.items()}
+        growth_series = sum(normalized[a] * weights_frac[a] for a in assets_needed) * initial_fund_value
+        growth_series = growth_series / growth_series.iloc[0]
+        growth_label = f"Estrategia '{strategy_name}' (sin rebalanceo, buy&hold para esta simulación)"
+    else:
+        growth_series = download_single_series(tickers[growth_choice], "1996-01-01", "2026-07-05")
+        growth_label = growth_choice
 
-    def simulate_withdrawal_strategy(
-        close_prices, start_year, end_year,
+    cushion_series = download_single_series(tickers["Monetario"], "1996-01-01", "2026-07-05")
+
+    st.info(f"📌 Activo de crecimiento del Fondo: **{growth_label}** · Colchón: **Monetario (IB01.L)**")
+
+    def simulate_withdrawal_strategy_generic(
+        growth_prices, cushion_prices,
+        start_year, end_year,
         initial_fund_value, annual_expenses, fund_withdrawal_positive,
         cushion_multiple, inflation_rate, apply_tax, tax_rate, cost_basis_pct
     ):
-        annual_prices = close_prices.resample('YE').last()
-        annual_prices = annual_prices[(annual_prices.index.year >= start_year - 1) & (annual_prices.index.year <= end_year)]
-        annual_returns = annual_prices.pct_change().dropna()
+        growth_annual = growth_prices.resample('YE').last()
+        cushion_annual = cushion_prices.resample('YE').last()
+
+        common_index = growth_annual.index.intersection(cushion_annual.index)
+        growth_annual = growth_annual.loc[common_index]
+        cushion_annual = cushion_annual.loc[common_index]
+
+        min_year_available = common_index.year.min()
+        effective_start_year = max(start_year, min_year_available)
+
+        growth_annual = growth_annual[(growth_annual.index.year >= effective_start_year - 1) & (growth_annual.index.year <= end_year)]
+        cushion_annual = cushion_annual[(cushion_annual.index.year >= effective_start_year - 1) & (cushion_annual.index.year <= end_year)]
+
+        growth_returns = growth_annual.pct_change().dropna()
+        cushion_returns = cushion_annual.pct_change().dropna()
 
         fund_value = initial_fund_value
         current_expenses = annual_expenses
@@ -88,11 +172,16 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         records = []
         prev_year_positive = True
 
-        for dt, ret in annual_returns.items():
+        for dt in growth_returns.index:
             year = dt.year
+            ret = growth_returns.loc[dt]
+            cushion_ret = cushion_returns.loc[dt] if dt in cushion_returns.index else 0.0
+
             fund_before = fund_value
             fund_value = fund_value * (1 + ret)
             fund_growth = fund_value - fund_before
+
+            cushion = cushion * (1 + cushion_ret)
 
             tax_paid, cushion_refill, forced = 0, 0, False
             source = "Fondo" if prev_year_positive else "Colchón"
@@ -106,7 +195,6 @@ if app_mode == "💸 Retiro (fase de jubilación)":
                     needed += tax_paid
                 fund_value = max(0, fund_value - needed)
 
-                # Excedente de revalorización recarga el colchón vía traspaso (sin peaje fiscal)
                 surplus = fund_growth - needed
                 if surplus > 0 and cushion < cushion_max:
                     cushion_refill = min(surplus, cushion_max - cushion)
@@ -128,6 +216,7 @@ if app_mode == "💸 Retiro (fase de jubilación)":
             records.append({
                 "Año": year,
                 "Rentabilidad Fondo (%)": round(ret * 100, 2),
+                "Rentabilidad Colchón (%)": round(cushion_ret * 100, 2),
                 "Año anterior": "Positivo/Plano" if prev_year_positive else "Negativo",
                 "Fuente retiro": source if not forced else "Fondo (colchón agotado)",
                 "Retiro objetivo (€)": round(target, 2),
@@ -135,9 +224,6 @@ if app_mode == "💸 Retiro (fase de jubilación)":
                 "Recarga colchón (€)": round(cushion_refill, 2),
                 "Valor Fondo (€)": round(fund_value, 2),
                 "Colchón (€)": round(cushion, 2),
-                "Gastos anuales (€)": round(current_expenses, 2),
-                "Retiro fondo objetivo (€)": round(current_fund_withdrawal_target, 2),
-                "Límite colchón (€)": round(cushion_max, 2),
                 "Patrimonio Total (€)": round(fund_value + cushion, 2),
             })
 
@@ -146,25 +232,19 @@ if app_mode == "💸 Retiro (fase de jubilación)":
             current_fund_withdrawal_target *= (1 + inflation_rate)
             cushion_max = cushion_multiple * current_expenses
 
-        return pd.DataFrame(records)
+        return pd.DataFrame(records), effective_start_year
 
-    close_hist = descargar_msci_world_historico()
-
-    resultado_retiro = simulate_withdrawal_strategy(
-        close_hist,
-        start_year=int(start_year_ret),
-        end_year=int(end_year_ret),
-        initial_fund_value=initial_fund_value,
-        annual_expenses=annual_expenses,
-        fund_withdrawal_positive=fund_withdrawal_positive,
-        cushion_multiple=cushion_multiple,
-        inflation_rate=inflation_rate_ret,
-        apply_tax=apply_tax,
-        tax_rate=tax_rate,
-        cost_basis_pct=cost_basis_pct,
+    resultado_retiro, eff_year = simulate_withdrawal_strategy_generic(
+        growth_series, cushion_series,
+        int(start_year_ret), int(end_year_ret),
+        initial_fund_value, annual_expenses, fund_withdrawal_positive,
+        cushion_multiple, inflation_rate_ret, apply_tax, tax_rate, cost_basis_pct
     )
 
-    st.subheader(f"Evolución del Patrimonio ({start_year_ret}-{end_year_ret})")
+    if eff_year > start_year_ret:
+        st.warning(f"⚠️ El activo/estrategia elegido no tiene histórico desde {start_year_ret}. La simulación empieza en {eff_year} (primer año con datos disponibles tanto del activo de crecimiento como del Monetario).")
+
+    st.subheader(f"Evolución del Patrimonio ({eff_year}-{end_year_ret})")
     fig_ret = go.Figure()
     fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Valor Fondo (€)"],
         name="Fondo", stackgroup="one", mode="lines"))
@@ -198,10 +278,9 @@ if app_mode == "💸 Retiro (fase de jubilación)":
     st.stop()
 
 # ============================================================
-# MODO ACUMULACIÓN (TU APP ORIGINAL, SIN CAMBIOS)
+# MODO ACUMULACIÓN — CORREGIDO
 # ============================================================
 
-# --- Accesos rápidos por año ---
 st.sidebar.subheader("Acceso rápido por año")
 current_year = datetime.today().year
 available_years = list(range(2020, current_year + 1))
@@ -235,46 +314,16 @@ transaction_fee = st.sidebar.number_input(
     help="Comisión aplicada sobre cada compra, aportación y rebalanceo (ej. 0.10% típico en brokers de bajo coste)"
 ) / 100
 
-tickers = {
-    "MSCI World": "URTH",
-    "Momentum": "IWMO.L",
-    "Quality": "IWQU.L",
-    "Renta Fija LP": "IDTL.L",
-    "Monetario": "IB01.L",
-    "Oro": "IGLN.L",
-    "Emergentes": "EEM",
-    "Small Caps": "IJR",
-}
-
-@st.cache_data(ttl=3600)
-def download_data(tickers_dict, start, end):
-    data = {}
-    for name, ticker in tickers_dict.items():
-        try:
-            df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-            if not df.empty and 'Volume' in df.columns:
-                df = df[df['Volume'] > 0]
-            if not df.empty and len(df) > 10:
-                close = df['Close']
-                if isinstance(close, pd.DataFrame):
-                    close = close.iloc[:, 0]
-                data[name] = close
-                st.sidebar.success(f"✅ {name} cargado")
-            else:
-                st.sidebar.warning(f"⚠️ Datos insuficientes para {name}")
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ Error descargando {name}: {e}")
-    return data
-
 data_dict = download_data(tickers, start_date, end_date)
 
 if len(data_dict) < 2:
     st.error("No hay suficientes datos. Prueba con otras fechas.")
     st.stop()
 
+# FIX: ya no se hace dropna() global. Cada serie conserva su propio histórico completo,
+# sin que un activo con menos datos recorte a los demás.
 data = pd.concat(data_dict, axis=1)
-data = data.dropna(how='all')
-data = data.ffill().dropna()
+data = data.ffill()
 
 available_assets = list(data.columns)
 
@@ -387,75 +436,4 @@ def simulate_custom_strategy(prices_df, weights_pct, initial_capital, monthly_co
             for a in assets:
                 shares[a] = (total_value_after_fee * weights[a]) / current_prices[a]
             rebalance_dates.append(dt)
-            total_fees += fee_amount
-            total_value = total_value_after_fee
-
-        values.append(total_value)
-
-    weight_df = pd.DataFrame(weight_history).set_index("date") if weight_history else pd.DataFrame()
-    return pd.Series(values, index=prices_df.index), contributed, rebalance_dates, weight_df, total_fees
-
-def cagr(series):
-    days = (series.index[-1] - series.index[0]).days
-    if days < 90:
-        return float("nan")
-    years = days / 365.25
-    return ((series.iloc[-1] / series.iloc[0]) ** (1 / years) - 1) * 100
-
-def max_drawdown(series):
-    cummax = series.cummax()
-    dd = series / cummax - 1
-    return dd.min() * 100
-
-results = {}
-total_contributed = {}
-rebalance_info = {}
-fees_info = {}
-weight_histories = {}
-
-for col in selected_series:
-    serie, contributed, fees = simulate_portfolio(data[col], initial_capital, monthly_contribution, transaction_fee)
-    results[col] = serie
-    total_contributed[col] = contributed
-    fees_info[col] = fees
-
-for name in selected_strategies:
-    weights_pct = st.session_state.custom_strategies[name]
-    assets_needed = list(weights_pct.keys())
-    if not all(a in data.columns for a in assets_needed):
-        st.warning(f"La estrategia '{name}' usa activos sin datos disponibles en este rango.")
-        continue
-    prices_subset = data[assets_needed]
-    serie, contributed, reb_dates, weight_df, fees = simulate_custom_strategy(
-        prices_subset, weights_pct, initial_capital, monthly_contribution, rebalance_band, transaction_fee
-    )
-    results[name] = serie
-    total_contributed[name] = contributed
-    rebalance_info[name] = len(reb_dates)
-    fees_info[name] = fees
-    weight_histories[name] = weight_df
-
-portfolio_values = pd.DataFrame(results).dropna()
-
-st.subheader(f"Evolución de las Carteras ({start_date} a {end_date})")
-fig = go.Figure()
-for col in portfolio_values.columns:
-    fig.add_trace(go.Scatter(x=portfolio_values.index, y=portfolio_values[col], name=col))
-
-fig.update_layout(height=650, template="plotly_white",
-                  xaxis_title="Fecha", yaxis_title="Valor de la cartera")
-st.plotly_chart(fig, use_container_width=True)
-
-if weight_histories:
-    st.subheader("📐 Composición de pesos en el tiempo (estrategias personalizadas)")
-    strategy_to_plot = st.selectbox("Elige una estrategia para ver su evolución de pesos", list(weight_histories.keys()))
-    wdf = weight_histories[strategy_to_plot]
-    if not wdf.empty:
-        fig_weights = go.Figure()
-        for asset in wdf.columns:
-            fig_weights.add_trace(go.Scatter(
-                x=wdf.index, y=wdf[asset] * 100,
-                name=asset, stackgroup="one", mode="lines"
-            ))
-        target_weights = st.session_state.custom_strategies[strategy_to_plot]
-      
+    
