@@ -7,7 +7,7 @@ import json
 import os
 
 st.set_page_config(page_title="Comparador Carteras", layout="wide")
-st.title("📈 Comparador de Carteras Momentum + Quality")
+st.title("Comparador de Carteras Momentum + Quality")
 
 STRATEGIES_FILE = "strategies.json"
 
@@ -38,12 +38,12 @@ tickers = {
 
 HISTORICAL_INDEX_TICKER = "^990100-USD-STRD"
 
-st.sidebar.header("Configuración")
+st.sidebar.header("Configuracion")
 
 app_mode = st.sidebar.radio(
-    "Modo de simulación",
-    ["📈 Acumulación (aportaciones)", "💸 Retiro (fase de jubilación)"],
-    help="Elige si estás ahorrando/aportando o si ya estás retirando dinero con la regla del colchón"
+    "Modo de simulacion",
+    ["Acumulacion (aportaciones)", "Retiro (fase de jubilacion)"],
+    help="Elige si estas ahorrando/aportando o si ya estas retirando dinero con la regla del colchon"
 )
 
 @st.cache_data(ttl=3600)
@@ -59,11 +59,11 @@ def download_data(tickers_dict, start, end):
                 if isinstance(close, pd.DataFrame):
                     close = close.iloc[:, 0]
                 data[name] = close
-                st.sidebar.success(f"✅ {name} cargado")
+                st.sidebar.success(f"{name} cargado")
             else:
-                st.sidebar.warning(f"⚠️ Datos insuficientes para {name}")
+                st.sidebar.warning(f"Datos insuficientes para {name}")
         except Exception as e:
-            st.sidebar.warning(f"⚠️ Error descargando {name}: {e}")
+            st.sidebar.warning(f"Error descargando {name}: {e}")
     return data
 
 @st.cache_data(ttl=3600)
@@ -75,61 +75,84 @@ def download_single_series(ticker, start, end):
     return close.dropna()
 
 # ============================================================
-# MODO RETIRO (FASE DE JUBILACIÓN CON COLCHÓN)
+# MODO RETIRO (ESTRATEGIA MEZCLA: COLCHON + TENDENCIA + GUARDRAILS, MENSUAL)
 # ============================================================
-if app_mode == "💸 Retiro (fase de jubilación)":
-    st.header("💸 Simulación de Retiro con Colchón")
-    st.caption("El Colchón NO depende de ningún ETF real. Tiene un rendimiento anual deseado, pero nunca puede superar la inflación de ese año.")
+if app_mode == "Retiro (fase de jubilacion)":
+    st.header("Simulacion de Retiro Mensual: Estrategia Mezcla (Colchon + Guardrails)")
+    st.caption(
+        "Estrategia basada en evidencia (Bengen, Trinity Study, Guyton-Klinger): "
+        "cubo de liquidez (colchon) para evitar vender en caidas, retiro condicionado a la "
+        "tendencia del mercado, ajuste dinamico del gasto (guardrails) y congelacion de la "
+        "subida por inflacion tras periodos negativos (regla 'sin subida')."
+    )
 
     col1, col2 = st.sidebar.columns(2)
-    start_year_ret = col1.number_input("Año inicio", min_value=1997, max_value=2026, value=1997)
-    end_year_ret = col2.number_input("Año fin", min_value=1997, max_value=2026, value=2026)
+    start_year_ret = col1.number_input("Ano inicio", min_value=1997, max_value=2026, value=1997)
+    end_year_ret = col2.number_input("Ano fin", min_value=1997, max_value=2026, value=2026)
 
-    st.sidebar.subheader("📊 Activo o estrategia de crecimiento")
+    st.sidebar.subheader("Activo o estrategia de crecimiento")
 
     if "custom_strategies" not in st.session_state:
         st.session_state.custom_strategies = load_strategies_from_disk()
 
-    growth_options = ["MSCI World (histórico ampliado desde 1997)"] + list(tickers.keys())
+    growth_options = ["MSCI World (historico ampliado desde 1997)"] + list(tickers.keys())
     if st.session_state.custom_strategies:
-        growth_options += [f"📁 {name}" for name in st.session_state.custom_strategies]
+        growth_options += [f"[Estrategia] {name}" for name in st.session_state.custom_strategies]
 
     growth_choice = st.sidebar.selectbox(
-        "¿Con qué inviertes el Fondo durante el retiro?",
+        "Con que inviertes el Fondo durante el retiro?",
         growth_options,
-        help="Puedes elegir un único activo, o una de tus estrategias personalizadas creadas en modo Acumulación"
+        help="Puedes elegir un unico activo, o una de tus estrategias personalizadas creadas en modo Acumulacion"
     )
 
-    st.sidebar.subheader("💰 Capital y gastos")
-    initial_fund_value = st.sidebar.number_input("Capital inicial en el Fondo (€)", value=300000, min_value=1000, step=10000)
-    annual_expenses = st.sidebar.number_input("Gastos anuales (€)", value=15000, min_value=1000, step=500,
-        help="Se retiran del Colchón en años negativos. También define el tamaño del Colchón.")
-    fund_withdrawal_positive = st.sidebar.number_input("Retiro del Fondo en año positivo/plano (€)", value=20000, min_value=0, step=500,
-        help="Cantidad que retiras del Fondo cuando el año ANTERIOR fue positivo o plano")
+    st.sidebar.subheader("Capital y gastos")
+    initial_fund_value = st.sidebar.number_input("Capital inicial en el Fondo (EUR)", value=300000, min_value=1000, step=10000)
+    annual_expenses = st.sidebar.number_input("Gastos anuales (EUR)", value=15000, min_value=1000, step=500,
+        help="Se retiran del Colchon en meses de mercado bajista. Tambien define el tamano del Colchon.")
+    fund_withdrawal_positive = st.sidebar.number_input("Retiro anual del Fondo en tendencia alcista (EUR)", value=20000, min_value=0, step=500,
+        help="Cantidad anual (repartida en 12 meses) que retiras del Fondo cuando la tendencia de los ultimos 12 meses es positiva")
 
-    st.sidebar.subheader("📊 Inflación y fiscalidad")
-    inflation_rate_ret = st.sidebar.number_input("Inflación anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
-    apply_tax = st.sidebar.checkbox("Aplicar IRPF sobre plusvalías al vender del Fondo", value=True)
+    st.sidebar.subheader("Inflacion y fiscalidad")
+    inflation_rate_ret = st.sidebar.number_input("Inflacion anual (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5) / 100
+    skip_cola_on_down_year = st.sidebar.checkbox(
+        "Congelar subida por inflacion tras ano bajista (regla 'sin subida')", value=True,
+        help="Regla de Guyton-Klinger: si la rentabilidad de los ultimos 12 meses fue negativa, no se sube el gasto por inflacion ese ano"
+    )
+    apply_tax = st.sidebar.checkbox("Aplicar IRPF sobre plusvalias al vender del Fondo", value=True)
     tax_rate = st.sidebar.number_input("Tipo medio IRPF (%)", value=23.0, min_value=0.0, max_value=50.0, step=1.0,
         disabled=not apply_tax) / 100
-    cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalía)",
+    cost_basis_pct = st.sidebar.slider("% del importe vendido considerado 'coste' (resto es plusvalia)",
         min_value=0, max_value=100, value=50, disabled=not apply_tax) / 100
 
-    st.sidebar.subheader("🛡️ Colchón (sin ETF, capado a inflación)")
-    cushion_multiple = st.sidebar.number_input("Múltiplo de gastos anuales para el Colchón", value=3.0, min_value=1.0, step=0.5,
-        help="Ej: 3x gastos anuales = límite máximo del colchón")
+    st.sidebar.subheader("Colchon (cubo de liquidez, capado a inflacion)")
+    cushion_multiple = st.sidebar.number_input("Multiplo de gastos anuales para el Colchon", value=3.0, min_value=1.0, step=0.5,
+        help="Ej: 3x gastos anuales = tamano objetivo del cubo de liquidez")
     cushion_desired_return = st.sidebar.number_input(
-        "Rendimiento anual deseado del Colchón (%)", value=2.0, min_value=0.0, max_value=15.0, step=0.5,
-        help="El colchón crecerá a este ritmo cada año, pero NUNCA por encima de la inflación de ese año (se aplica el mínimo entre ambos)."
+        "Rendimiento anual deseado del Colchon (%)", value=2.0, min_value=0.0, max_value=15.0, step=0.5,
+        help="El colchon crece a este ritmo cada mes, pero NUNCA por encima de la inflacion (se aplica el minimo entre ambos)."
     ) / 100
     cushion_effective_return = min(cushion_desired_return, inflation_rate_ret)
-    st.sidebar.caption(f"➡️ Rendimiento efectivo del Colchón: **{cushion_effective_return*100:.2f}%** (mínimo entre deseado e inflación)")
+    st.sidebar.caption(f"Rendimiento efectivo del Colchon: {cushion_effective_return*100:.2f}% anual (minimo entre deseado e inflacion)")
 
-    if growth_choice == "MSCI World (histórico ampliado desde 1997)":
+    st.sidebar.subheader("Guardrails (ajuste dinamico del gasto)")
+    use_guardrails = st.sidebar.checkbox(
+        "Activar guardrails de Guyton-Klinger", value=True,
+        help="Ajusta el gasto anual si la tasa de retiro implicita se aleja demasiado de la inicial"
+    )
+    guardrail_band = st.sidebar.slider(
+        "Banda de guardrail (%)", min_value=5, max_value=40, value=20, disabled=not use_guardrails,
+        help="Si la tasa de retiro actual supera la inicial +banda%, se recorta el gasto; si cae por debajo de -banda%, se sube"
+    ) / 100
+    guardrail_adjustment = st.sidebar.slider(
+        "Ajuste al activar guardrail (%)", min_value=5, max_value=25, value=10, disabled=not use_guardrails,
+        help="Porcentaje de recorte o subida real del gasto anual cuando se dispara un guardrail"
+    ) / 100
+
+    if growth_choice == "MSCI World (historico ampliado desde 1997)":
         growth_series = download_single_series(HISTORICAL_INDEX_TICKER, "1996-01-01", "2026-07-05")
-        growth_label = "MSCI World (índice histórico)"
-    elif growth_choice.startswith("📁 "):
-        strategy_name = growth_choice.replace("📁 ", "")
+        growth_label = "MSCI World (indice historico)"
+    elif growth_choice.startswith("[Estrategia] "):
+        strategy_name = growth_choice.replace("[Estrategia] ", "")
         weights_pct = st.session_state.custom_strategies[strategy_name]
         assets_needed = list(weights_pct.keys())
         data_strategy = download_data({a: tickers[a] for a in assets_needed}, "2015-01-01", "2026-07-05")
@@ -138,49 +161,68 @@ if app_mode == "💸 Retiro (fase de jubilación)":
         weights_frac = {a: w / 100 for a, w in weights_pct.items()}
         growth_series = sum(normalized[a] * weights_frac[a] for a in assets_needed) * initial_fund_value
         growth_series = growth_series / growth_series.iloc[0]
-        growth_label = f"Estrategia '{strategy_name}' (sin rebalanceo, buy&hold para esta simulación)"
+        growth_label = f"Estrategia '{strategy_name}' (sin rebalanceo, buy&hold para esta simulacion)"
     else:
         growth_series = download_single_series(tickers[growth_choice], "1996-01-01", "2026-07-05")
         growth_label = growth_choice
 
-    st.info(f"📌 Activo de crecimiento del Fondo: **{growth_label}** · Colchón: **{cushion_effective_return*100:.2f}% anual (capado a inflación)**")
+    st.info(
+        f"Activo de crecimiento del Fondo: {growth_label} | "
+        f"Colchon: {cushion_effective_return*100:.2f}% anual (capado a inflacion) | "
+        f"Guardrails: {'activos' if use_guardrails else 'desactivados'}"
+    )
 
-    def simulate_withdrawal_capped_cushion(
+    def simulate_withdrawal_mixed_monthly(
         growth_prices, start_year, end_year,
         initial_fund_value, annual_expenses, fund_withdrawal_positive,
-        cushion_multiple, cushion_desired_return, inflation_rate,
-        apply_tax, tax_rate, cost_basis_pct
+        cushion_multiple, cushion_effective_return, inflation_rate,
+        apply_tax, tax_rate, cost_basis_pct,
+        skip_cola_on_down_year, use_guardrails, guardrail_band, guardrail_adjustment
     ):
-        growth_annual = growth_prices.resample('YE').last()
-        min_year_available = growth_annual.index.year.min()
+        monthly_prices = growth_prices.resample('ME').last()
+        min_year_available = monthly_prices.index.year.min()
         effective_start_year = max(start_year, min_year_available)
 
-        growth_annual = growth_annual[(growth_annual.index.year >= effective_start_year - 1) & (growth_annual.index.year <= end_year)]
-        growth_returns = growth_annual.pct_change().dropna()
+        monthly_prices = monthly_prices[
+            (monthly_prices.index.year >= effective_start_year - 1) &
+            (monthly_prices.index.year <= end_year)
+        ]
+        monthly_returns = monthly_prices.pct_change().dropna()
+        trailing_12m_return = monthly_prices.pct_change(12).reindex(monthly_returns.index)
+
+        monthly_infl = (1 + inflation_rate) ** (1 / 12) - 1
+        monthly_cushion_rate = (1 + cushion_effective_return) ** (1 / 12) - 1
 
         fund_value = initial_fund_value
-        current_expenses = annual_expenses
-        current_fund_withdrawal_target = fund_withdrawal_positive
-        cushion_max = cushion_multiple * current_expenses
+        current_annual_expenses = annual_expenses
+        current_annual_fund_withdrawal = fund_withdrawal_positive
+        initial_withdrawal_rate = fund_withdrawal_positive / initial_fund_value if initial_fund_value > 0 else 0
+
+        cushion_max = cushion_multiple * current_annual_expenses
         cushion = cushion_max
-        cushion_growth_rate = min(cushion_desired_return, inflation_rate)
 
         records = []
-        prev_year_positive = True
+        months_elapsed = 0
 
-        for dt, ret in growth_returns.items():
+        for dt, ret in monthly_returns.items():
             year = dt.year
+            month = dt.month
+            trend = trailing_12m_return.get(dt, None)
+            market_bullish = (trend is not None) and (trend >= 0)
+
             fund_before = fund_value
             fund_value = fund_value * (1 + ret)
             fund_growth = fund_value - fund_before
+            cushion = cushion * (1 + monthly_cushion_rate)
 
-            cushion = cushion * (1 + cushion_growth_rate)
+            monthly_fund_target = current_annual_fund_withdrawal / 12
+            monthly_expenses_target = current_annual_expenses / 12
 
             tax_paid, cushion_refill, forced = 0, 0, False
-            source = "Fondo" if prev_year_positive else "Colchón"
-            target = current_fund_withdrawal_target if prev_year_positive else current_expenses
 
-            if source == "Fondo":
+            if market_bullish or trend is None:
+                source = "Fondo"
+                target = monthly_fund_target
                 needed = target
                 if apply_tax:
                     gain = needed * (1 - cost_basis_pct)
@@ -193,6 +235,8 @@ if app_mode == "💸 Retiro (fase de jubilación)":
                     cushion_refill = min(surplus, cushion_max - cushion)
                     cushion += cushion_refill
             else:
+                source = "Colchon"
+                target = monthly_expenses_target
                 if cushion >= target:
                     cushion -= target
                 else:
@@ -206,76 +250,110 @@ if app_mode == "💸 Retiro (fase de jubilación)":
                         needed += tax_paid
                     fund_value = max(0, fund_value - needed)
 
-            records.append({
-                "Año": year,
-                "Rentabilidad Fondo (%)": round(ret * 100, 2),
-                "Rentabilidad Colchón (%)": round(cushion_growth_rate * 100, 2),
-                "Año anterior": "Positivo/Plano" if prev_year_positive else "Negativo",
-                "Fuente retiro": source if not forced else "Fondo (colchón agotado)",
-                "Retiro objetivo (€)": round(target, 2),
-                "Impuestos pagados (€)": round(tax_paid, 2),
-                "Recarga colchón (€)": round(cushion_refill, 2),
-                "Valor Fondo (€)": round(fund_value, 2),
-                "Colchón (€)": round(cushion, 2),
-                "Patrimonio Total (€)": round(fund_value + cushion, 2),
-            })
+            months_elapsed += 1
 
-            prev_year_positive = ret >= 0
-            current_expenses *= (1 + inflation_rate)
-            current_fund_withdrawal_target *= (1 + inflation_rate)
-            cushion_max = cushion_multiple * current_expenses
+            if months_elapsed > 1 and month == 1:
+                freeze_cola = skip_cola_on_down_year and (trend is not None) and (trend < 0)
+                if not freeze_cola:
+                    current_annual_expenses *= (1 + inflation_rate)
+                    current_annual_fund_withdrawal *= (1 + inflation_rate)
+
+                if use_guardrails and fund_value > 0:
+                    current_rate = current_annual_fund_withdrawal / fund_value
+                    upper_bound = initial_withdrawal_rate * (1 + guardrail_band)
+                    lower_bound = initial_withdrawal_rate * (1 - guardrail_band)
+                    if current_rate > upper_bound:
+                        current_annual_fund_withdrawal *= (1 - guardrail_adjustment)
+                        current_annual_expenses *= (1 - guardrail_adjustment)
+                    elif current_rate < lower_bound:
+                        current_annual_fund_withdrawal *= (1 + guardrail_adjustment)
+                        current_annual_expenses *= (1 + guardrail_adjustment)
+
+                cushion_max = cushion_multiple * current_annual_expenses
+
+            records.append({
+                "Fecha": dt,
+                "Ano": year,
+                "Mes": month,
+                "Rentabilidad Fondo (%)": round(ret * 100, 2),
+                "Tendencia 12m": "Alcista" if market_bullish else ("Bajista" if trend is not None else "N/D"),
+                "Fuente retiro": source if not forced else "Fondo (colchon agotado)",
+                "Retiro del mes (EUR)": round(target, 2),
+                "Impuestos del mes (EUR)": round(tax_paid, 2),
+                "Recarga colchon (EUR)": round(cushion_refill, 2),
+                "Gasto anual vigente (EUR)": round(current_annual_expenses, 2),
+                "Retiro Fondo anual vigente (EUR)": round(current_annual_fund_withdrawal, 2),
+                "Valor Fondo (EUR)": round(fund_value, 2),
+                "Colchon (EUR)": round(cushion, 2),
+                "Patrimonio Total (EUR)": round(fund_value + cushion, 2),
+            })
 
         return pd.DataFrame(records), effective_start_year
 
-    resultado_retiro, eff_year = simulate_withdrawal_capped_cushion(
+    resultado_retiro, eff_year = simulate_withdrawal_mixed_monthly(
         growth_series,
         int(start_year_ret), int(end_year_ret),
         initial_fund_value, annual_expenses, fund_withdrawal_positive,
-        cushion_multiple, cushion_desired_return, inflation_rate_ret,
-        apply_tax, tax_rate, cost_basis_pct
+        cushion_multiple, cushion_effective_return, inflation_rate_ret,
+        apply_tax, tax_rate, cost_basis_pct,
+        skip_cola_on_down_year, use_guardrails, guardrail_band, guardrail_adjustment
     )
 
     if eff_year > start_year_ret:
-        st.warning(f"⚠️ El activo/estrategia elegido no tiene histórico desde {start_year_ret}. La simulación empieza en {eff_year} (primer año con datos disponibles para ese activo de crecimiento).")
+        st.warning(f"El activo/estrategia elegido no tiene historico desde {start_year_ret}. La simulacion empieza en {eff_year} (primer mes con datos disponibles para ese activo de crecimiento).")
 
-    st.subheader(f"Evolución del Patrimonio ({eff_year}-{end_year_ret})")
+    st.subheader(f"Evolucion Mensual del Patrimonio ({eff_year}-{end_year_ret})")
     fig_ret = go.Figure()
-    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Valor Fondo (€)"],
+    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Fecha"], y=resultado_retiro["Valor Fondo (EUR)"],
         name="Fondo", stackgroup="one", mode="lines"))
-    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Año"], y=resultado_retiro["Colchón (€)"],
-        name=f"Colchón (capado a inflación, {cushion_effective_return*100:.1f}%)", stackgroup="one", mode="lines"))
+    fig_ret.add_trace(go.Scatter(x=resultado_retiro["Fecha"], y=resultado_retiro["Colchon (EUR)"],
+        name=f"Colchon (capado a inflacion, {cushion_effective_return*100:.1f}%)", stackgroup="one", mode="lines"))
     fig_ret.update_layout(height=500, template="plotly_white",
-        xaxis_title="Año", yaxis_title="Valor (€)")
+        xaxis_title="Fecha", yaxis_title="Valor (EUR)")
     st.plotly_chart(fig_ret, use_container_width=True)
 
-    agotado = resultado_retiro[resultado_retiro["Patrimonio Total (€)"] <= 0]
+    agotado = resultado_retiro[resultado_retiro["Patrimonio Total (EUR)"] <= 0]
     if not agotado.empty:
-        st.error(f"⚠️ El patrimonio se agota en el año {agotado.iloc[0]['Año']}.")
+        primera_fecha = agotado.iloc[0]["Fecha"]
+        st.error(f"El patrimonio se agota en {primera_fecha.strftime('%m/%Y')}.")
     else:
-        st.success(f"✅ El patrimonio sobrevive todo el periodo. Valor final: {resultado_retiro.iloc[-1]['Patrimonio Total (€)']:,.2f} €")
+        st.success(f"El patrimonio sobrevive todo el periodo. Valor final: {resultado_retiro.iloc[-1]['Patrimonio Total (EUR)']:,.2f} EUR")
 
-    st.subheader("📋 Detalle año a año")
+    st.subheader("Resumen anual (agregado desde la simulacion mensual)")
+    yearly_summary = resultado_retiro.groupby("Ano").agg(
+        Retiro_Total_Fondo=("Retiro del mes (EUR)", lambda x: x[resultado_retiro.loc[x.index, "Fuente retiro"].str.contains("Fondo")].sum()),
+        Retiro_Total_Colchon=("Retiro del mes (EUR)", lambda x: x[resultado_retiro.loc[x.index, "Fuente retiro"] == "Colchon"].sum()),
+        Impuestos_Pagados=("Impuestos del mes (EUR)", "sum"),
+        Recarga_Colchon=("Recarga colchon (EUR)", "sum"),
+        Valor_Fondo_Fin_Ano=("Valor Fondo (EUR)", "last"),
+        Colchon_Fin_Ano=("Colchon (EUR)", "last"),
+        Patrimonio_Total_Fin_Ano=("Patrimonio Total (EUR)", "last"),
+        Gasto_Anual_Vigente=("Gasto anual vigente (EUR)", "last"),
+    ).reset_index()
+    st.dataframe(yearly_summary, use_container_width=True)
+
+    st.subheader("Detalle mes a mes")
     st.dataframe(resultado_retiro, use_container_width=True)
 
-    total_taxes = resultado_retiro["Impuestos pagados (€)"].sum()
-    years_from_fund = (resultado_retiro["Fuente retiro"].str.contains("Fondo")).sum()
-    years_from_cushion = (resultado_retiro["Fuente retiro"] == "Colchón").sum()
+    total_taxes = resultado_retiro["Impuestos del mes (EUR)"].sum()
+    months_from_fund = (resultado_retiro["Fuente retiro"].str.contains("Fondo")).sum()
+    months_from_cushion = (resultado_retiro["Fuente retiro"] == "Colchon").sum()
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total impuestos pagados", f"{total_taxes:,.0f} €")
-    m2.metric("Años retirando del Fondo", years_from_fund)
-    m3.metric("Años retirando del Colchón", years_from_cushion)
+    m1.metric("Total impuestos pagados", f"{total_taxes:,.0f} EUR")
+    m2.metric("Meses retirando del Fondo", months_from_fund)
+    m3.metric("Meses retirando del Colchon", months_from_cushion)
 
     csv = resultado_retiro.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Descargar simulación (CSV)", csv, "simulacion_retiro.csv", "text/csv")
+    st.download_button("Descargar simulacion mensual (CSV)", csv, "simulacion_retiro_mensual.csv", "text/csv")
 
     st.stop()
 
 # ============================================================
-# MODO ACUMULACIÓN
+# MODO ACUMULACION
 # ============================================================
 
-st.sidebar.subheader("Acceso rápido por año")
+st.sidebar.subheader("Acceso rapido por ano")
 current_year = datetime.today().year
 available_years = list(range(2020, current_year + 1))
 
@@ -294,18 +372,18 @@ for i, year in enumerate(available_years):
 start_date = st.sidebar.date_input("Fecha de inicio", st.session_state.start_date, key="start_date")
 end_date = st.sidebar.date_input("Fecha de fin", st.session_state.end_date, key="end_date")
 
-initial_capital = st.sidebar.number_input("Capital inicial (€)", value=10000, min_value=1000)
+initial_capital = st.sidebar.number_input("Capital inicial (EUR)", value=10000, min_value=1000)
 monthly_contribution = st.sidebar.number_input(
-    "Aportación mensual (€)", value=0, min_value=0, step=50,
-    help="Se añade el primer día de cotización de cada mes"
+    "Aportacion mensual (EUR)", value=0, min_value=0, step=50,
+    help="Se anade el primer dia de cotizacion de cada mes"
 )
 rebalance_band = st.sidebar.slider(
     "Banda de rebalanceo relativa (%)", min_value=1, max_value=50, value=5,
-    help="Ej: con un objetivo del 90% y banda del 5%, se rebalancea si el peso sale del rango 85,5%-94,5% (90% ± 5% de 90%)"
+    help="Ej: con un objetivo del 90% y banda del 5%, se rebalancea si el peso sale del rango 85.5%-94.5% (90% +/- 5% de 90%)"
 ) / 100
 transaction_fee = st.sidebar.number_input(
-    "Coste de transacción (%)", value=0.10, min_value=0.0, max_value=5.0, step=0.05,
-    help="Comisión aplicada sobre cada compra, aportación y rebalanceo (ej. 0.10% típico en brokers de bajo coste)"
+    "Coste de transaccion (%)", value=0.10, min_value=0.0, max_value=5.0, step=0.05,
+    help="Comision aplicada sobre cada compra, aportacion y rebalanceo (ej. 0.10% tipico en brokers de bajo coste)"
 ) / 100
 
 data_dict = download_data(tickers, start_date, end_date)
@@ -319,12 +397,12 @@ data = data.ffill()
 
 available_assets = list(data.columns)
 
-st.sidebar.header("🎯 Estrategias personalizadas")
+st.sidebar.header("Estrategias personalizadas")
 
 if "custom_strategies" not in st.session_state:
     st.session_state.custom_strategies = load_strategies_from_disk()
 
-with st.sidebar.expander("➕ Crear nueva estrategia"):
+with st.sidebar.expander("Crear nueva estrategia"):
     strategy_name = st.text_input("Nombre de la estrategia", key="new_strategy_name")
     st.write("Asigna el % de cada activo (deben sumar 100%):")
     strategy_weights = {}
@@ -348,8 +426,8 @@ if st.session_state.custom_strategies:
     st.sidebar.subheader("Estrategias guardadas")
     for name in list(st.session_state.custom_strategies.keys()):
         col1, col2 = st.sidebar.columns([3, 1])
-        col1.write(f"**{name}**: {st.session_state.custom_strategies[name]}")
-        if col2.button("🗑️", key=f"del_{name}"):
+        col1.write(f"{name}: {st.session_state.custom_strategies[name]}")
+        if col2.button("Borrar", key=f"del_{name}"):
             del st.session_state.custom_strategies[name]
             save_strategies_to_disk(st.session_state.custom_strategies)
             st.rerun()
@@ -481,7 +559,7 @@ for name in selected_strategies:
 
 portfolio_values = pd.DataFrame(results)
 
-st.subheader(f"Evolución de las Carteras ({start_date} a {end_date})")
+st.subheader(f"Evolucion de las Carteras ({start_date} a {end_date})")
 fig = go.Figure()
 for col in portfolio_values.columns:
     serie_plot = portfolio_values[col].dropna()
@@ -492,8 +570,8 @@ fig.update_layout(height=650, template="plotly_white",
 st.plotly_chart(fig, use_container_width=True)
 
 if weight_histories:
-    st.subheader("📐 Composición de pesos en el tiempo (estrategias personalizadas)")
-    strategy_to_plot = st.selectbox("Elige una estrategia para ver su evolución de pesos", list(weight_histories.keys()))
+    st.subheader("Composicion de pesos en el tiempo (estrategias personalizadas)")
+    strategy_to_plot = st.selectbox("Elige una estrategia para ver su evolucion de pesos", list(weight_histories.keys()))
     wdf = weight_histories[strategy_to_plot]
     if not wdf.empty:
         fig_weights = go.Figure()
@@ -506,11 +584,11 @@ if weight_histories:
         fig_weights.update_layout(
             height=450, template="plotly_white",
             xaxis_title="Fecha", yaxis_title="Peso (%)",
-            title=f"Evolución de pesos — objetivo: {target_weights}"
+            title=f"Evolucion de pesos - objetivo: {target_weights}"
         )
         st.plotly_chart(fig_weights, use_container_width=True)
 
-st.subheader("📊 Resultados finales")
+st.subheader("Resultados finales")
 summary_data = {}
 for col in portfolio_values.columns:
     serie = portfolio_values[col].dropna()
@@ -524,11 +602,11 @@ for col in portfolio_values.columns:
         "Ganancia neta": round(serie.iloc[-1] - total_contributed[col], 2),
         "Rentabilidad Total (%)": round((serie.iloc[-1] / total_contributed[col] - 1) * 100, 2),
         "Rentabilidad Anualizada (%)": round(cagr_val, 2) if not pd.isna(cagr_val) else "Periodo muy corto",
-        "Máximo Drawdown (%)": round(max_drawdown(serie), 2),
-        "Nº Rebalanceos": rebalance_info.get(col, "—")
+        "Maximo Drawdown (%)": round(max_drawdown(serie), 2),
+        "Numero Rebalanceos": rebalance_info.get(col, "-")
     }
 
 summary = pd.DataFrame(summary_data).T
 st.dataframe(summary)
 
-st.success("¡App funcionando con tus tickers!")
+st.success("App funcionando con tus tickers!")
